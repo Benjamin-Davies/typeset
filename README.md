@@ -4,7 +4,7 @@ This is a simple typesetting program with the aim of generating PDF files with p
 
 ## TODO
 
-- [ ] X-positions: Given a string of glyphs, I want to generate a list of X-positions for when the characters are printed in a line.
+- [x] X-positions: Given a string of glyphs, I want to generate a list of X-positions for when the characters are printed in a line.
 - [ ] PDF generation: Given a string of glyphs and their positions, I want to hand-generate a minimal PDF with those glyphs displayed and that font embedded. The PDF should be A4 with 72pt margins.
 - [ ] Soft wrap: Given a string of glyphs, I want to insert soft line breaks between words so that the text is left aligned.
 - [ ] Paragraphs: Given a list of paragraphs of glyphs, I want to draw them as blocks with some padding between them.

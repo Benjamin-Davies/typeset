@@ -5,8 +5,6 @@ const FONT_DATA: &[u8] = include_bytes!(concat!(
     "/noto-serif/NotoSerif-Regular.ttf"
 ));
 
-pub fn read_font() {
-    let face = Face::parse(FONT_DATA, 0).unwrap();
-    dbg!(face.number_of_glyphs());
-    dbg!(face.names().into_iter().collect::<Vec<_>>());
+pub fn read_font() -> Face<'static> {
+    Face::parse(FONT_DATA, 0).unwrap()
 }
