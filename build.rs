@@ -1,5 +1,6 @@
 use std::{env, fs::File, io, path::PathBuf, process::Command};
 
+// Downloaded from https://www.fontsquirrel.com/fonts/noto-serif
 const DOWNLOAD_LINK: &str = "https://www.fontsquirrel.com/fonts/download/noto-serif";
 
 fn main() {

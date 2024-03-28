@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ttf-parser = "0.20.0"
 
 [build-dependencies]
 ureq = "2.9.6"

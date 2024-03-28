@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    typeset::font::read_font();
 }
