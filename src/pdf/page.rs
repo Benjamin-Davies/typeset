@@ -1,6 +1,9 @@
 use std::io::Write;
 
-use crate::{font::Font, text_layout::layout_paragraphs};
+use crate::{
+    font::Font,
+    text_layout::{justify_line, layout_paragraphs},
+};
 
 // A4 page size
 pub const PAGE_WIDTH: f32 = 8.27 * 72.0;
@@ -18,15 +21,15 @@ impl PageBuilder {
     }
 
     pub fn paragraph(mut self, font: &Font, font_size: f32, s: &str) -> Self {
-        let paragraphs = layout_paragraphs(font, font_size, s, PAGE_WIDTH - 2.0 * 72.0);
-
         let font_scale = font_size / font.face.units_per_em() as f32;
         let ascender_pt = font.face.ascender() as f32 * font_scale;
-        let line_height = font.face.line_gap() + font.face.ascender() - font.face.descender();
-        let line_height_pt = line_height as f32 * font_scale;
+        let line_height_pt = font.line_height() as f32 * font_scale;
 
         let x = 72.0;
         let mut y = PAGE_HEIGHT - 72.0 - ascender_pt;
+        let width = PAGE_WIDTH - 2.0 * 72.0;
+
+        let paragraphs = layout_paragraphs(font, font_size, s, width);
 
         for paragraph in paragraphs {
             write!(self.content, "BT\n").unwrap();
@@ -34,8 +37,19 @@ impl PageBuilder {
             write!(self.content, "{} TL\n", line_height_pt).unwrap();
             write!(self.content, "{} {} Td\n", x, y).unwrap();
 
-            for line in paragraph {
-                write!(self.content, "({}) Tj\n", line).unwrap();
+            for (i, line) in paragraph.iter().enumerate() {
+                if i < paragraph.len() - 1 {
+                    let (words, space) = justify_line(font, font_size, line, width);
+
+                    write!(self.content, "[").unwrap();
+                    for word in words {
+                        write!(self.content, "({}){}", word, -space).unwrap();
+                    }
+                    write!(self.content, "] TJ\n").unwrap();
+                } else {
+                    write!(self.content, "({}) Tj\n", line).unwrap();
+                }
+
                 write!(self.content, "T*\n").unwrap();
                 y -= line_height_pt;
             }

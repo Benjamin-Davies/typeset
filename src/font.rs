@@ -42,6 +42,7 @@ impl<'a> Font<'a> {
             .map(|c| {
                 let glyph_id = face.glyph_index(c)?;
                 let width = face.glyph_hor_advance(glyph_id)?;
+                // Convert from font units to thousandths of an em.
                 Some(1000 * width as u32 / units_per_em)
             })
             .map(|w| w.unwrap_or(0))
@@ -56,6 +57,12 @@ impl<'a> Font<'a> {
         }
     }
 
+    /// Returns the line height in font units.
+    pub fn line_height(&self) -> i16 {
+        self.face.line_gap() + self.face.ascender() - self.face.descender()
+    }
+
+    /// Converts from font units to thousanths of an em.
     pub fn to_milli_em(&self, units: i16) -> i32 {
         1000 * units as i32 / self.face.units_per_em() as i32
     }
