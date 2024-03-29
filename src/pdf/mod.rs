@@ -119,15 +119,30 @@ impl PDFBuilder {
         .unwrap();
         self.end_object();
 
-        let font = self.start_object();
+        let widths_ref = self.start_object();
+        write!(self.content, "[ ").unwrap();
+        for width in &font.widths {
+            write!(self.content, "{} ", (width * 1000.0).floor()).unwrap();
+        }
+        write!(self.content, "]").unwrap();
+        self.end_object();
+
+        let font_ref = self.start_object();
         write!(
             self.content,
-            "<< /Type /Font /Subtype /TrueType /FontDescriptor {font_descriptor} >>"
+            "<< /Type /Font /Subtype /TrueType /FirstChar {first_char} /LastChar {last_char} ",
+            first_char = *font.char_range.start() as u32,
+            last_char = *font.char_range.end() as u32,
+        )
+        .unwrap();
+        write!(
+            self.content,
+            "/Widths {widths_ref} /FontDescriptor {font_descriptor} >>",
         )
         .unwrap();
         self.end_object();
 
-        font
+        font_ref
     }
 
     pub fn single_page(mut self, content: &[u8]) -> Self {

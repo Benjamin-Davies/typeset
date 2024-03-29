@@ -6,10 +6,14 @@ use typeset::{
 };
 
 fn main() {
-    let face = Font::default();
+    let font = Font::default();
 
     let page = PageBuilder::new()
-        .paragraph(&face, 12.0, "Hello, world! Typesetting is fun.")
+        .paragraph(
+            &font,
+            12.0,
+            "Hello, world! Typesetting is fun. Tokenisation more so.",
+        )
         .build();
     let content = PDFBuilder::new().single_page(&page).build();
 
