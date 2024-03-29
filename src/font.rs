@@ -7,7 +7,7 @@ pub struct Font<'a> {
     pub face: Face<'a>,
     pub ps_name: String,
     pub char_range: RangeInclusive<char>,
-    pub widths: Vec<f32>,
+    pub widths: Vec<u32>,
 }
 
 const FONT_DATA: &[u8] = include_bytes!(concat!(
@@ -36,15 +36,15 @@ impl<'a> Font<'a> {
             .unwrap();
 
         let char_range = '\x00'..='\x7F';
-        let scale = 1.0 / face.units_per_em() as f32;
+        let units_per_em = face.units_per_em() as u32;
         let widths = char_range
             .clone()
             .map(|c| {
-                face.glyph_index(c)
-                    .and_then(|glyph_id| face.glyph_hor_advance(glyph_id))
-                    .unwrap_or(0) as f32
-                    * scale
+                let glyph_id = face.glyph_index(c)?;
+                let width = face.glyph_hor_advance(glyph_id)?;
+                Some(1000 * width as u32 / units_per_em)
             })
+            .map(|w| w.unwrap_or(0))
             .collect::<Vec<_>>();
 
         Self {
@@ -54,5 +54,9 @@ impl<'a> Font<'a> {
             char_range,
             widths,
         }
+    }
+
+    pub fn to_milli_em(&self, units: i16) -> i32 {
+        1000 * units as i32 / self.face.units_per_em() as i32
     }
 }

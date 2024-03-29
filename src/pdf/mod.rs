@@ -97,17 +97,21 @@ impl PDFBuilder {
         )
         .unwrap();
         let bbox = font.face.global_bounding_box();
-        let inv_scale = font.face.units_per_em() as i16;
         write!(
             self.content,
-            "/FontBBox [ {x1} {y1} {x2} {y2} ] /ItalicAngle {angle} /Ascent {ascent} /Descent {descent} ",
-            x1 = 1000 * bbox.x_min / inv_scale,
-            y1 = 1000 * bbox.y_min / inv_scale,
-            x2 = 1000 * bbox.x_max / inv_scale,
-            y2 = 1000 * bbox.y_max / inv_scale,
+            "/FontBBox [{x1} {y1} {x2} {y2}] /ItalicAngle {angle} ",
+            x1 = font.to_milli_em(bbox.x_min),
+            y1 = font.to_milli_em(bbox.y_min),
+            x2 = font.to_milli_em(bbox.x_max),
+            y2 = font.to_milli_em(bbox.y_max),
             angle = font.face.italic_angle().unwrap_or(0.0),
-            ascent = 1000 * font.face.ascender() / inv_scale,
-            descent = 1000 * font.face.descender() / inv_scale,
+        )
+        .unwrap();
+        write!(
+            self.content,
+            "/Ascent {ascent} /Descent {descent} ",
+            ascent = font.to_milli_em(font.face.ascender()),
+            descent = font.to_milli_em(font.face.descender()),
         )
         .unwrap();
         write!(
@@ -123,7 +127,7 @@ impl PDFBuilder {
         let widths_ref = self.start_object();
         write!(self.content, "[ ").unwrap();
         for width in &font.widths {
-            write!(self.content, "{} ", (width * 1000.0).floor()).unwrap();
+            write!(self.content, "{width} ").unwrap();
         }
         write!(self.content, "]").unwrap();
         self.end_object();
