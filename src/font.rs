@@ -1,4 +1,4 @@
-use ttf_parser::{name_id, Face, PlatformId};
+use ttf_parser::{name_id, Face};
 
 pub struct Font<'a> {
     pub data: &'a [u8],

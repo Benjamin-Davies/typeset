@@ -90,12 +90,33 @@ impl PDFBuilder {
         self.end_object();
 
         let font_descriptor = self.start_object();
-        // TODO: Use actual font metrics
         write!(
             self.content,
-            "<< /Type /FontDescriptor /FontName /{ps_name} /Flags 6 /FontBBox [ -665 -325 2000 1006 ] /ItalicAngle 0 /Ascent 1006 /Descent -325 /CapHeight 716 /StemV 80 /FontFile2 {font_file2} >>",
+            "<< /Type /FontDescriptor /FontName /{ps_name} /Flags 6 ",
             ps_name = font.ps_name,
-        ).unwrap();
+        )
+        .unwrap();
+        let bbox = font.face.global_bounding_box();
+        write!(
+            self.content,
+            "/FontBBox [ {x1} {y1} {x2} {y2} ] /ItalicAngle {angle} /Ascent {ascent} /Descent {descent} ",
+            x1 = bbox.x_min,
+            y1 = bbox.y_min,
+            x2 = bbox.x_max,
+            y2 = bbox.y_max,
+            angle = font.face.italic_angle().unwrap_or(0.0),
+            ascent = font.face.ascender(),
+            descent = font.face.descender(),
+        )
+        .unwrap();
+        write!(
+            self.content,
+            "/CapHeight {cap_height} /StemV {stem_v} /FontFile2 {font_file2} >>",
+            cap_height = font.face.height(),
+            stem_v = 100,
+            font_file2 = font_file2,
+        )
+        .unwrap();
         self.end_object();
 
         let font = self.start_object();
@@ -124,9 +145,13 @@ impl PDFBuilder {
         let font = Font::default();
         let font_ref = self.font(&font);
 
-        let font_ps_name = font.ps_name;
         self.start_object_with_ref(pages);
-        write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 /Resources << /Font << /{font_ps_name} {font_ref} >> >> /MediaBox [ 0 0 {PAGE_WIDTH} {PAGE_HEIGHT} ] >>").unwrap();
+        write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 ").unwrap();
+        write!(
+            self.content,
+            "/Resources << /Font << /{ps_name} {font_ref} >> >> /MediaBox [ 0 0 {PAGE_WIDTH} {PAGE_HEIGHT} ] >>",
+            ps_name = font.ps_name,
+        ).unwrap();
         self.end_object();
 
         let catalog = self.start_object();
