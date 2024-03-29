@@ -1,12 +1,12 @@
 use std::fs;
 
 use typeset::{
-    font::read_font,
+    font::Font,
     pdf::{page::PageBuilder, PDFBuilder},
 };
 
 fn main() {
-    let face = read_font();
+    let face = Font::default();
 
     let page = PageBuilder::new()
         .paragraph(&face, 12.0, "Hello, world! Typesetting is fun.")

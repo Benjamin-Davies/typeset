@@ -1,6 +1,6 @@
 use std::{fmt, io::Write};
 
-use crate::font::{FONT_DATA, FONT_PS_NAME};
+use crate::font::Font;
 
 use self::page::{PAGE_HEIGHT, PAGE_WIDTH};
 
@@ -80,19 +80,12 @@ impl PDFBuilder {
         ref_
     }
 
-    fn default_font(&mut self) -> Ref {
-        let content = FONT_DATA;
-
+    fn font(&mut self, font: &Font) -> Ref {
+        let len = font.data.len();
         let font_file2 = self.start_object();
-        write!(
-            self.content,
-            "<< /Length {} /Length1 {} >>\n",
-            content.len(),
-            content.len()
-        )
-        .unwrap();
+        write!(self.content, "<< /Length {len} /Length1 {len} >>\n",).unwrap();
         write!(self.content, "stream\n").unwrap();
-        self.content.extend_from_slice(content);
+        self.content.extend_from_slice(font.data);
         write!(self.content, "\nendstream\n").unwrap();
         self.end_object();
 
@@ -100,7 +93,8 @@ impl PDFBuilder {
         // TODO: Use actual font metrics
         write!(
             self.content,
-            "<< /Type /FontDescriptor /FontName /{FONT_PS_NAME} /Flags 6 /FontBBox [ -665 -325 2000 1006 ] /ItalicAngle 0 /Ascent 1006 /Descent -325 /CapHeight 716 /StemV 80 /FontFile2 {font_file2} >>"
+            "<< /Type /FontDescriptor /FontName /{ps_name} /Flags 6 /FontBBox [ -665 -325 2000 1006 ] /ItalicAngle 0 /Ascent 1006 /Descent -325 /CapHeight 716 /StemV 80 /FontFile2 {font_file2} >>",
+            ps_name = font.ps_name,
         ).unwrap();
         self.end_object();
 
@@ -127,10 +121,12 @@ impl PDFBuilder {
         .unwrap();
         self.end_object();
 
-        let font = self.default_font();
+        let font = Font::default();
+        let font_ref = self.font(&font);
 
+        let font_ps_name = font.ps_name;
         self.start_object_with_ref(pages);
-        write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 /Resources << /Font << /{FONT_PS_NAME} {font} >> >> /MediaBox [ 0 0 {PAGE_WIDTH} {PAGE_HEIGHT} ] >>").unwrap();
+        write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 /Resources << /Font << /{font_ps_name} {font_ref} >> >> /MediaBox [ 0 0 {PAGE_WIDTH} {PAGE_HEIGHT} ] >>").unwrap();
         self.end_object();
 
         let catalog = self.start_object();

@@ -1,6 +1,7 @@
-use ttf_parser::Face;
+use crate::font::Font;
 
-pub fn compute_x_positions(face: &Face, font_size: f32, s: &str) -> Vec<(char, f32)> {
+pub fn compute_x_positions(font: &Font, font_size: f32, s: &str) -> Vec<(char, f32)> {
+    let face = &font.face;
     let font_scale = font_size / face.units_per_em() as f32;
 
     let mut x = 0.0;

@@ -1,8 +1,6 @@
 use std::io::Write;
 
-use ttf_parser::Face;
-
-use crate::{font::FONT_PS_NAME, text_layout::compute_x_positions};
+use crate::{font::Font, text_layout::compute_x_positions};
 
 // A4 page size
 pub const PAGE_WIDTH: f32 = 8.27 * 72.0;
@@ -19,16 +17,17 @@ impl PageBuilder {
         }
     }
 
-    pub fn paragraph(mut self, face: &Face, font_size: f32, s: &str) -> Self {
+    pub fn paragraph(mut self, font: &Font, font_size: f32, s: &str) -> Self {
         // Use our own spacing calculations
-        let glyphs = compute_x_positions(face, font_size, s);
+        let glyphs = compute_x_positions(font, font_size, s);
         for (c, x) in glyphs {
             write!(
                 self.content,
-                "BT\n/{FONT_PS_NAME} 12 Tf\n{} {} Td\n({}) Tj\nET\n",
+                "BT\n/{} 12 Tf\n{} {} Td\n({}) Tj\nET\n",
+                font.ps_name,
                 72.0 + x,
                 1.5 * 72.0,
-                c
+                c,
             )
             .unwrap();
         }
@@ -36,8 +35,8 @@ impl PageBuilder {
         // Use the built-in spacing calculations
         write!(
             self.content,
-            "BT\n/{FONT_PS_NAME} 12 Tf\n72.0 72.0 Td\n({}) Tj\nET\n",
-            s
+            "BT\n/{} 12 Tf\n72.0 72.0 Td\n({}) Tj\nET\n",
+            font.ps_name, s,
         )
         .unwrap();
 
