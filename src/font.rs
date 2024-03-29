@@ -1,6 +1,7 @@
 use ttf_parser::Face;
 
-const FONT_DATA: &[u8] = include_bytes!(concat!(
+pub const FONT_PS_NAME: &str = "NotoSerif";
+pub const FONT_DATA: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/noto-serif/NotoSerif-Regular.ttf"
 ));

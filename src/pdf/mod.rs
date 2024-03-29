@@ -1,5 +1,10 @@
-use core::fmt;
-use std::{fmt::write, io::Write};
+use std::{fmt, io::Write};
+
+use crate::font::{FONT_DATA, FONT_PS_NAME};
+
+use self::page::{PAGE_HEIGHT, PAGE_WIDTH};
+
+pub mod page;
 
 const HEADER: &[u8] = b"%PDF-1.7\n";
 
@@ -59,21 +64,73 @@ impl PDFBuilder {
         self.xref[id as usize] = XRefEntry::InUse { offset, generation };
 
         write!(self.content, "{id} {generation} obj\n").unwrap();
-        dbg!(ref_, offset);
     }
 
     fn end_object(&mut self) {
         write!(self.content, "endobj\n").unwrap();
     }
 
-    pub fn single_page(mut self) -> Self {
-        let pages = self.preallocate_object();
-        let page = self.start_object();
-        write!(self.content, "<< /Type /Page /Parent {pages} >>").unwrap();
+    fn stream_object(&mut self, content: &[u8]) -> Ref {
+        let ref_ = self.start_object();
+        write!(self.content, "<< /Length {} >>\n", content.len()).unwrap();
+        write!(self.content, "stream\n").unwrap();
+        self.content.extend_from_slice(content);
+        write!(self.content, "\nendstream\n").unwrap();
+        self.end_object();
+        ref_
+    }
+
+    fn default_font(&mut self) -> Ref {
+        let content = FONT_DATA;
+
+        let font_file2 = self.start_object();
+        write!(
+            self.content,
+            "<< /Length {} /Length1 {} >>\n",
+            content.len(),
+            content.len()
+        )
+        .unwrap();
+        write!(self.content, "stream\n").unwrap();
+        self.content.extend_from_slice(content);
+        write!(self.content, "\nendstream\n").unwrap();
         self.end_object();
 
+        let font_descriptor = self.start_object();
+        // TODO: Use actual font metrics
+        write!(
+            self.content,
+            "<< /Type /FontDescriptor /FontName /{FONT_PS_NAME} /Flags 6 /FontBBox [ -665 -325 2000 1006 ] /ItalicAngle 0 /Ascent 1006 /Descent -325 /CapHeight 716 /StemV 80 /FontFile2 {font_file2} >>"
+        ).unwrap();
+        self.end_object();
+
+        let font = self.start_object();
+        write!(
+            self.content,
+            "<< /Type /Font /Subtype /TrueType /FontDescriptor {font_descriptor} >>"
+        )
+        .unwrap();
+        self.end_object();
+
+        font
+    }
+
+    pub fn single_page(mut self, content: &[u8]) -> Self {
+        let contents = self.stream_object(content);
+
+        let pages = self.preallocate_object();
+        let page = self.start_object();
+        write!(
+            self.content,
+            "<< /Type /Page /Parent {pages} /Contents {contents} >>"
+        )
+        .unwrap();
+        self.end_object();
+
+        let font = self.default_font();
+
         self.start_object_with_ref(pages);
-        write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 /Resources << >> /MediaBox [ 0 0 100 100 ] >>").unwrap();
+        write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 /Resources << /Font << /{FONT_PS_NAME} {font} >> >> /MediaBox [ 0 0 {PAGE_WIDTH} {PAGE_HEIGHT} ] >>").unwrap();
         self.end_object();
 
         let catalog = self.start_object();
