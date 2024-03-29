@@ -116,8 +116,10 @@ impl PDFBuilder {
         .unwrap();
         write!(
             self.content,
-            "/CapHeight {cap_height} /StemV {stem_v} /FontFile2 {font_file2} >>",
-            cap_height = font.face.height(),
+            "/Leading {leading} /CapHeight {cap_height} /StemV {stem_v} /FontFile2 {font_file2} >>",
+            cap_height = font.to_milli_em(font.face.ascender()),
+            leading = font
+                .to_milli_em(font.face.line_gap() + font.face.ascender() - font.face.descender()),
             stem_v = 100,
             font_file2 = font_file2,
         )

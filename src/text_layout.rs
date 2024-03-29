@@ -1,17 +1,25 @@
 use crate::font::Font;
 
-pub fn compute_x_positions(font: &Font, font_size: f32, s: &str) -> Vec<(char, f32)> {
-    let face = &font.face;
-    let font_scale = font_size / face.units_per_em() as f32;
+pub fn split_line<'a>(font: &Font, font_size: f32, s: &'a str, width: f32) -> (&'a str, &'a str) {
+    let width = (width / font_size * font.face.units_per_em() as f32) as u32;
 
-    let mut x = 0.0;
-    let mut xs = Vec::new();
-    for c in s.chars() {
-        xs.push((c, x));
-
-        let glyph_id = face.glyph_index(c).unwrap();
-        x += face.glyph_hor_advance(glyph_id).unwrap() as f32 * font_scale;
+    let mut last_space = s.len();
+    let mut x = 0;
+    for (i, c) in s.char_indices() {
+        let Some(glyph_id) = font.face.glyph_index(c) else {
+            continue;
+        };
+        let Some(advance) = font.face.glyph_hor_advance(glyph_id) else {
+            continue;
+        };
+        x += advance as u32;
+        if c == ' ' {
+            last_space = i;
+        }
+        if x > width {
+            return s.split_at(last_space + 1);
+        }
     }
 
-    xs
+    (s, "")
 }
