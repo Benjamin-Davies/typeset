@@ -97,16 +97,17 @@ impl PDFBuilder {
         )
         .unwrap();
         let bbox = font.face.global_bounding_box();
+        let inv_scale = font.face.units_per_em() as i16;
         write!(
             self.content,
             "/FontBBox [ {x1} {y1} {x2} {y2} ] /ItalicAngle {angle} /Ascent {ascent} /Descent {descent} ",
-            x1 = bbox.x_min,
-            y1 = bbox.y_min,
-            x2 = bbox.x_max,
-            y2 = bbox.y_max,
+            x1 = 1000 * bbox.x_min / inv_scale,
+            y1 = 1000 * bbox.y_min / inv_scale,
+            x2 = 1000 * bbox.x_max / inv_scale,
+            y2 = 1000 * bbox.y_max / inv_scale,
             angle = font.face.italic_angle().unwrap_or(0.0),
-            ascent = font.face.ascender(),
-            descent = font.face.descender(),
+            ascent = 1000 * font.face.ascender() / inv_scale,
+            descent = 1000 * font.face.descender() / inv_scale,
         )
         .unwrap();
         write!(
