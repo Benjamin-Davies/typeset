@@ -58,20 +58,27 @@ fn layout_block<'a>(
 ) -> Vec<Line<'a>> {
     match block {
         Block::Text(block) => {
+            // Split block into chunks
             let chunks = block
                 .inlines
                 .iter()
                 .flat_map(|inline| chunk_inline(fonts, inline))
                 .collect::<Vec<_>>();
 
+            // Organise chunks into lines
             let mut lines = Vec::<Line>::new();
             let mut line_start = 0;
             let mut possible_break = 0;
-            let mut current_line_width = 0.0;
+            let mut width_to_break = 0.0;
+            let mut x = 0.0;
             let mut current_line_font_metrics = FontMetrics::default();
             for (i, chunk) in chunks.iter().enumerate() {
-                if possible_break > line_start
-                    && current_line_width - chunk.left_adjust + chunk.width > target_width
+                if chunk.is_whitespace && !chunks[i.saturating_sub(1)].is_whitespace {
+                    width_to_break = x;
+                    possible_break = i;
+                }
+
+                if possible_break > line_start && x - chunk.left_adjust + chunk.width > target_width
                 {
                     let mut line_spacing =
                         current_line_font_metrics.line_gap + current_line_font_metrics.ascent;
@@ -82,13 +89,13 @@ fn layout_block<'a>(
                     let line = Line {
                         chunks: chunks[line_start..possible_break].to_vec(),
                         font_metrics: current_line_font_metrics,
-                        text_total_width: current_line_width,
+                        text_total_width: width_to_break,
                         delta: vec2(0.0, -line_spacing),
                     };
                     lines.push(line);
 
                     line_start = possible_break;
-                    current_line_width = chunk.width;
+                    x = chunk.width;
                     current_line_font_metrics = chunk.font_metrics;
 
                     while let Some(next) = chunks.get(line_start) {
@@ -98,19 +105,16 @@ fn layout_block<'a>(
                             break;
                         }
                     }
-                } else {
-                    if i >= line_start {
-                        current_line_width += chunk.width;
-                        current_line_font_metrics =
-                            current_line_font_metrics.max(chunk.font_metrics);
+                } else if i >= line_start {
+                    if i == line_start {
+                        x = 0.0;
                     }
-
-                    if chunk.is_whitespace && !chunks[i.saturating_sub(1)].is_whitespace {
-                        possible_break = i;
-                    }
+                    x += chunk.width;
+                    current_line_font_metrics = current_line_font_metrics.max(chunk.font_metrics);
                 }
             }
 
+            // Add the last line if there are any chunks left
             if line_start < chunks.len() {
                 let mut line_spacing =
                     current_line_font_metrics.line_gap + current_line_font_metrics.ascent;
@@ -121,14 +125,15 @@ fn layout_block<'a>(
                 let line = Line {
                     chunks: chunks[line_start..].to_vec(),
                     font_metrics: current_line_font_metrics,
-                    text_total_width: current_line_width,
+                    text_total_width: x,
                     delta: vec2(0.0, -line_spacing),
                 };
                 lines.push(line);
             }
 
+            // Adjust alignment
             match block.align {
-                TextAlign::Left => {} // TODO
+                TextAlign::Left => {} // Do nothing
                 TextAlign::Center => {
                     for line in &mut lines {
                         let remaining_width = target_width - line.text_total_width;
@@ -139,8 +144,12 @@ fn layout_block<'a>(
                 }
                 TextAlign::Right => {
                     for line in &mut lines {
+                        debug_assert_eq!(
+                            line.chunks.iter().map(|c| c.width).sum::<f32>(),
+                            line.text_total_width
+                        );
+
                         let remaining_width = target_width - line.text_total_width;
-                        dbg!(remaining_width);
                         if let Some(first_chunk) = line.chunks.first_mut() {
                             first_chunk.left_adjust = -remaining_width;
                         }

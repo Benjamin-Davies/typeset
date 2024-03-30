@@ -63,7 +63,7 @@ fn main() {
         }),
     ];
     for (line, align) in text.lines().zip([
-        TextAlign::Right,
+        TextAlign::Justify,
         TextAlign::Left,
         TextAlign::Center,
         TextAlign::Right,
