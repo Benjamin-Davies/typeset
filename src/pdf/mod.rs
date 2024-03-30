@@ -1,4 +1,4 @@
-use std::{fmt, io::Write};
+use std::{collections::BTreeMap, fmt, io::Write};
 
 use crate::font::Font;
 
@@ -152,7 +152,7 @@ impl PDFBuilder {
         font_ref
     }
 
-    pub fn single_page(mut self, content: &[u8]) -> Self {
+    pub fn single_page(mut self, fonts: &BTreeMap<&str, &Font>, content: &[u8]) -> Self {
         let contents = self.stream_object(content);
 
         let pages = self.preallocate_object();
@@ -164,16 +164,25 @@ impl PDFBuilder {
         .unwrap();
         self.end_object();
 
-        let font = Font::default();
-        let font_ref = self.font(&font);
+        let font_refs = fonts
+            .iter()
+            .map(|(ps_name, font)| {
+                let ref_ = self.font(font);
+                (ps_name, ref_)
+            })
+            .collect::<Vec<_>>();
 
         self.start_object_with_ref(pages);
         write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 ").unwrap();
+        write!(self.content, "/Resources << /Font <<",).unwrap();
+        for (ps_name, font_ref) in font_refs {
+            write!(self.content, "/{ps_name} {font_ref} ").unwrap();
+        }
         write!(
             self.content,
-            "/Resources << /Font << /{ps_name} {font_ref} >> >> /MediaBox [ 0 0 {PAGE_WIDTH} {PAGE_HEIGHT} ] >>",
-            ps_name = font.ps_name,
-        ).unwrap();
+            ">> >> /MediaBox [ 0 0 {PAGE_WIDTH} {PAGE_HEIGHT} ] >>",
+        )
+        .unwrap();
         self.end_object();
 
         let catalog = self.start_object();

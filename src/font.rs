@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::ops::{Mul, RangeInclusive};
 
 use ttf_parser::{name_id, Face};
 
@@ -8,6 +8,13 @@ pub struct Font<'a> {
     pub ps_name: String,
     pub char_range: RangeInclusive<char>,
     pub widths: Vec<u32>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FontMetrics {
+    pub ascent: f32,
+    pub descent: f32,
+    pub line_gap: f32,
 }
 
 const FONT_DATA: &[u8] = include_bytes!(concat!(
@@ -57,13 +64,39 @@ impl<'a> Font<'a> {
         }
     }
 
-    /// Returns the line height in font units.
-    pub fn line_height(&self) -> i16 {
-        self.face.line_gap() + self.face.ascender() - self.face.descender()
-    }
-
     /// Converts from font units to thousanths of an em.
     pub fn to_milli_em(&self, units: i16) -> i32 {
         1000 * units as i32 / self.face.units_per_em() as i32
+    }
+
+    pub fn metrics(&self) -> FontMetrics {
+        let scale = 1.0 / self.face.units_per_em() as f32;
+        FontMetrics {
+            ascent: self.face.ascender() as f32 * scale,
+            descent: self.face.descender() as f32 * scale,
+            line_gap: self.face.line_gap() as f32 * scale,
+        }
+    }
+}
+
+impl FontMetrics {
+    pub fn max(&self, other: Self) -> Self {
+        Self {
+            ascent: self.ascent.max(other.ascent), // Choose the uppermost ascent.
+            descent: self.descent.min(other.descent), // Choose the lowermost descent.
+            line_gap: self.line_gap.max(other.line_gap), // Choose the largest line gap.
+        }
+    }
+}
+
+impl Mul<f32> for FontMetrics {
+    type Output = Self;
+
+    fn mul(self, rhs: f32) -> Self {
+        Self {
+            ascent: self.ascent * rhs,
+            descent: self.descent * rhs,
+            line_gap: self.line_gap * rhs,
+        }
     }
 }
