@@ -1,6 +1,8 @@
 use std::io::Write;
 
-use crate::text_layout::Line;
+use glam::Vec2;
+
+use crate::{document::Style, text_layout::Line};
 
 // A4 page size
 pub const PAGE_WIDTH: f32 = 8.27 * 72.0;
@@ -17,21 +19,47 @@ impl PageBuilder {
         }
     }
 
-    pub fn text(mut self, lines: &[Line]) -> Self {
+    fn begin_text(&mut self) {
         write!(self.content, "BT\n").unwrap();
-        for line in lines {
-            write!(self.content, "{} {} Td\n", line.delta.x, line.delta.y).unwrap();
-            for chunk in &line.chunks {
-                write!(
-                    self.content,
-                    "/{} {} Tf\n",
-                    chunk.style.font, chunk.style.font_size,
-                )
-                .unwrap();
-                write!(self.content, "[{}({})] TJ\n", chunk.left_adjust, chunk.text).unwrap();
-            }
-        }
+    }
+
+    fn end_text(&mut self) {
         write!(self.content, "ET\n").unwrap();
+    }
+
+    fn style(&mut self, style: &Style) {
+        write!(self.content, "/{} {} Tf\n", style.font, style.font_size).unwrap();
+    }
+
+    fn text_line_delta(&mut self, delta: Vec2) {
+        write!(self.content, "{} {} Td\n", delta.x, delta.y).unwrap();
+    }
+
+    pub fn text(mut self, lines: &[Line]) -> Self {
+        self.begin_text();
+        for line in lines {
+            self.text_line_delta(line.delta);
+
+            let Some(first_chunk) = line.chunks.first() else {
+                continue;
+            };
+            let mut current_style = first_chunk.style;
+            self.style(&current_style);
+
+            write!(self.content, "[").unwrap();
+            for chunk in &line.chunks {
+                if chunk.style != current_style {
+                    write!(self.content, "] TJ\n").unwrap();
+                    current_style = chunk.style;
+                    self.style(&current_style);
+                    write!(self.content, "[").unwrap();
+                }
+
+                write!(self.content, "{}({})", chunk.left_adjust, chunk.text).unwrap();
+            }
+            write!(self.content, "] TJ\n").unwrap();
+        }
+        self.end_text();
 
         self
     }
