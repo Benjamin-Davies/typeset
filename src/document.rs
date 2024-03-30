@@ -25,7 +25,7 @@ pub struct Inline<'a> {
     pub style: Style<'a>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Style<'a> {
     pub font: &'a str,
     pub font_size: f32,

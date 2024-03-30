@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use glam::{vec2, Vec2};
 
 use crate::{
-    document::{Block, Document, Inline, Style},
+    document::{Block, Document, Inline, Style, TextAlign},
     font::{Font, FontMetrics},
 };
 
@@ -99,8 +99,11 @@ fn layout_block<'a>(
                         }
                     }
                 } else {
-                    current_line_width += chunk.width;
-                    current_line_font_metrics = current_line_font_metrics.max(chunk.font_metrics);
+                    if i >= line_start {
+                        current_line_width += chunk.width;
+                        current_line_font_metrics =
+                            current_line_font_metrics.max(chunk.font_metrics);
+                    }
 
                     if chunk.is_whitespace && !chunks[i.saturating_sub(1)].is_whitespace {
                         possible_break = i;
@@ -124,7 +127,27 @@ fn layout_block<'a>(
                 lines.push(line);
             }
 
-            // TODO: alignment
+            match block.align {
+                TextAlign::Left => {} // TODO
+                TextAlign::Center => {
+                    for line in &mut lines {
+                        let remaining_width = target_width - line.text_total_width;
+                        if let Some(first_chunk) = line.chunks.first_mut() {
+                            first_chunk.left_adjust = -0.5 * remaining_width;
+                        }
+                    }
+                }
+                TextAlign::Right => {
+                    for line in &mut lines {
+                        let remaining_width = target_width - line.text_total_width;
+                        dbg!(remaining_width);
+                        if let Some(first_chunk) = line.chunks.first_mut() {
+                            first_chunk.left_adjust = -remaining_width;
+                        }
+                    }
+                }
+                TextAlign::Justify => {} // TODO
+            }
 
             lines
         }
