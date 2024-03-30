@@ -90,6 +90,14 @@ fn layout_block<'a>(
                     line_start = possible_break;
                     current_line_width = chunk.width;
                     current_line_font_metrics = chunk.font_metrics;
+
+                    while let Some(next) = chunks.get(line_start) {
+                        if next.is_whitespace {
+                            line_start += 1;
+                        } else {
+                            break;
+                        }
+                    }
                 } else {
                     current_line_width += chunk.width;
                     current_line_font_metrics = current_line_font_metrics.max(chunk.font_metrics);
