@@ -131,6 +131,14 @@ fn layout_block<'a>(
                 lines.push(line);
             }
 
+            #[cfg(debug_assertions)]
+            for line in &lines {
+                debug_assert_eq!(
+                    line.chunks.iter().map(|c| c.width).sum::<f32>(),
+                    line.text_total_width,
+                );
+            }
+
             // Adjust alignment
             match block.align {
                 TextAlign::Left => {} // Do nothing
@@ -144,18 +152,31 @@ fn layout_block<'a>(
                 }
                 TextAlign::Right => {
                     for line in &mut lines {
-                        debug_assert_eq!(
-                            line.chunks.iter().map(|c| c.width).sum::<f32>(),
-                            line.text_total_width
-                        );
-
                         let remaining_width = target_width - line.text_total_width;
                         if let Some(first_chunk) = line.chunks.first_mut() {
                             first_chunk.left_adjust = -remaining_width;
                         }
                     }
                 }
-                TextAlign::Justify => {} // TODO
+                TextAlign::Justify => {
+                    for line in &mut lines {
+                        let remaining_width = target_width - line.text_total_width;
+
+                        let mut num_whitespace_gaps = 0;
+                        for i in 1..line.chunks.len() {
+                            if line.chunks[i - 1].is_whitespace || line.chunks[i].is_whitespace {
+                                num_whitespace_gaps += 1;
+                            }
+                        }
+
+                        let gap_width = remaining_width / num_whitespace_gaps as f32;
+                        for i in 1..line.chunks.len() {
+                            if line.chunks[i - 1].is_whitespace || line.chunks[i].is_whitespace {
+                                line.chunks[i].left_adjust = -gap_width;
+                            }
+                        }
+                    }
+                }
             }
 
             lines
