@@ -11,7 +11,7 @@ pub struct Font<'a> {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-pub struct FontMetrics {
+pub struct TextMetrics {
     pub ascent: f32,
     pub descent: f32,
     pub line_gap: f32,
@@ -69,9 +69,9 @@ impl<'a> Font<'a> {
         1000 * units as i32 / self.face.units_per_em() as i32
     }
 
-    pub fn metrics(&self) -> FontMetrics {
+    pub fn metrics(&self) -> TextMetrics {
         let scale = 1.0 / self.face.units_per_em() as f32;
-        FontMetrics {
+        TextMetrics {
             ascent: self.face.ascender() as f32 * scale,
             descent: self.face.descender() as f32 * scale,
             line_gap: self.face.line_gap() as f32 * scale,
@@ -79,7 +79,7 @@ impl<'a> Font<'a> {
     }
 }
 
-impl FontMetrics {
+impl TextMetrics {
     pub fn max(&self, other: Self) -> Self {
         Self {
             ascent: self.ascent.max(other.ascent), // Choose the uppermost ascent.
@@ -87,9 +87,13 @@ impl FontMetrics {
             line_gap: self.line_gap.max(other.line_gap), // Choose the largest line gap.
         }
     }
+
+    pub fn line_height(&self) -> f32 {
+        self.line_gap + self.ascent - self.descent
+    }
 }
 
-impl Mul<f32> for FontMetrics {
+impl Mul<f32> for TextMetrics {
     type Output = Self;
 
     fn mul(self, rhs: f32) -> Self {
