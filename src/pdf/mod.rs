@@ -11,6 +11,8 @@ const HEADER: &[u8] = b"%PDF-1.7\n";
 pub struct PDFBuilder {
     content: Vec<u8>,
     xref: Vec<XRefEntry>,
+    pages_ref: Ref,
+    page_refs: Vec<Ref>,
     root: Ref,
 }
 
@@ -31,15 +33,19 @@ impl fmt::Display for Ref {
 
 impl PDFBuilder {
     pub fn new() -> Self {
-        Self {
+        let mut builder = Self {
             content: HEADER.to_owned(),
             xref: vec![XRefEntry::Free {
                 // Will be filled in when XREF table is generated
                 next_free: 0,
                 generation: u16::MAX,
             }],
-            root: Ref(0, 0),
-        }
+            pages_ref: Ref::default(),
+            page_refs: Vec::new(),
+            root: Ref::default(),
+        };
+        builder.pages_ref = builder.preallocate_object();
+        builder
     }
 
     fn preallocate_object(&mut self) -> Ref {
@@ -152,18 +158,22 @@ impl PDFBuilder {
         font_ref
     }
 
-    pub fn single_page(mut self, fonts: &BTreeMap<&str, &Font>, content: &[u8]) -> Self {
+    pub fn page(&mut self, content: &[u8]) {
         let contents = self.stream_object(content);
 
-        let pages = self.preallocate_object();
         let page = self.start_object();
         write!(
             self.content,
-            "<< /Type /Page /Parent {pages} /Contents {contents} >>"
+            "<< /Type /Page /Parent {pages} /Contents {contents} >>",
+            pages = self.pages_ref,
         )
         .unwrap();
         self.end_object();
 
+        self.page_refs.push(page);
+    }
+
+    pub fn catalog(&mut self, fonts: &BTreeMap<&str, &Font>) {
         let font_refs = fonts
             .iter()
             .map(|(ps_name, font)| {
@@ -172,8 +182,17 @@ impl PDFBuilder {
             })
             .collect::<Vec<_>>();
 
-        self.start_object_with_ref(pages);
-        write!(self.content, "<< /Type /Pages /Kids [ {page} ] /Count 1 ").unwrap();
+        self.start_object_with_ref(self.pages_ref);
+        write!(self.content, "<< /Type /Pages /Kids [ ").unwrap();
+        for page_ref in &self.page_refs {
+            write!(self.content, "{page_ref} ").unwrap();
+        }
+        write!(
+            self.content,
+            "] /Count {page_count} ",
+            page_count = self.page_refs.len(),
+        )
+        .unwrap();
         write!(self.content, "/Resources << /Font <<",).unwrap();
         for (ps_name, font_ref) in font_refs {
             write!(self.content, "/{ps_name} {font_ref} ").unwrap();
@@ -186,12 +205,15 @@ impl PDFBuilder {
         self.end_object();
 
         let catalog = self.start_object();
-        write!(self.content, "<< /Type /Catalog /Pages {pages} >>").unwrap();
+        write!(
+            self.content,
+            "<< /Type /Catalog /Pages {pages} >>",
+            pages = self.pages_ref,
+        )
+        .unwrap();
         self.end_object();
 
         self.root = catalog;
-
-        self
     }
 
     pub fn build(self) -> Vec<u8> {
@@ -199,6 +221,7 @@ impl PDFBuilder {
             mut content,
             mut xref,
             root,
+            ..
         } = self;
 
         let xref_size = xref.len() as u32;

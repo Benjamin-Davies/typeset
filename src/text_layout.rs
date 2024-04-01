@@ -10,6 +10,11 @@ use crate::{
 const PARAGRAPH_GAP: f32 = 12.0;
 
 #[derive(Debug, Clone)]
+pub struct Page<'a> {
+    pub lines: Vec<Line<'a>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Line<'a> {
     pub chunks: Vec<Chunk<'a>>,
     pub font_metrics: FontMetrics,
@@ -27,7 +32,7 @@ pub struct Chunk<'a> {
     pub left_adjust: f32,
 }
 
-pub fn layout_document<'a>(document: &Document<'a>) -> Vec<Line<'a>> {
+pub fn layout_document<'a>(document: &Document<'a>) -> Vec<Page<'a>> {
     let target_width = document.page_size.x - 2.0 * document.margin;
 
     let mut lines = Vec::new();
@@ -48,7 +53,9 @@ pub fn layout_document<'a>(document: &Document<'a>) -> Vec<Line<'a>> {
         first_line.delta.y =
             document.page_size.y - document.margin - first_line.font_metrics.ascent;
     }
-    lines
+
+    let page = Page { lines };
+    vec![page.clone(), page]
 }
 
 fn layout_block<'a>(

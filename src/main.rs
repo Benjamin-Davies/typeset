@@ -87,12 +87,15 @@ fn main() {
         margin: 72.0,
     };
 
-    let lines = layout_document(&document);
+    let pages = layout_document(&document);
 
-    let page = PageBuilder::new().text(&lines).build();
-    let content = PDFBuilder::new()
-        .single_page(&document.fonts, &page)
-        .build();
+    let mut pdf_builder = PDFBuilder::new();
+    for page in pages {
+        let page = PageBuilder::new().text(&page.lines).build();
+        pdf_builder.page(&page);
+    }
+    pdf_builder.catalog(&document.fonts);
+    let content = pdf_builder.build();
 
     fs::write("target/output.pdf", content).unwrap();
 }
