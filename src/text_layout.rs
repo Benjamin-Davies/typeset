@@ -52,7 +52,11 @@ pub fn layout_document<'a>(document: &Document<'a>) -> Vec<Page<'a>> {
     let mut current_page = Page::default();
     let mut current_page_height = 0.0;
     for line in lines {
-        let line_height = line.text_metrics.line_height();
+        let mut line_height = line.text_metrics.line_height();
+        if current_page.lines.is_empty() {
+            line_height -= line.text_metrics.line_gap;
+        }
+
         if current_page_height + line_height > target_height {
             pages.push(current_page);
             current_page = Page::default();
