@@ -9,12 +9,12 @@ use crate::{
 
 const PARAGRAPH_GAP: f32 = 12.0;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Page<'a> {
     pub lines: Vec<Line<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Line<'a> {
     pub chunks: Vec<Chunk<'a>>,
     pub text_metrics: TextMetrics,
@@ -22,7 +22,7 @@ pub struct Line<'a> {
     pub delta: Vec2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Chunk<'a> {
     pub text: &'a str,
     pub style: Style<'a>,
@@ -285,4 +285,55 @@ fn chunk_inline<'a>(fonts: &BTreeMap<&str, &'a Font>, inline: &Inline<'a>) -> Ve
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use std::iter;
+
+    use glam::vec2;
+
+    use crate::{document::Document, font::TextMetrics};
+
+    use super::{layout_pages, Line};
+
+    #[test]
+    fn test_layout_pages() {
+        let page_size = vec2(500.0, 500.0);
+        let margin = 100.0;
+        let target_height = 100.0;
+        let text_metrics = TextMetrics {
+            ascent: 20.0,
+            descent: -5.0,
+            line_gap: 10.0,
+        };
+        let delta = vec2(0.0, -35.0);
+
+        let line = Line {
+            chunks: vec![],
+            text_metrics,
+            text_total_width: 0.0,
+            delta,
+        };
+        let lines = iter::repeat(line).take(5).collect::<Vec<_>>();
+        let document = Document {
+            blocks: Default::default(),
+            fonts: Default::default(),
+            page_size,
+            margin,
+        };
+
+        let pages = layout_pages(lines.clone(), target_height, &document);
+
+        assert_eq!(pages.len(), 2);
+
+        assert_eq!(pages[0].lines.len(), 3);
+        assert_eq!(pages[0].lines[0].delta, vec2(100.0, 380.0));
+        assert_eq!(pages[0].lines[1].delta, delta);
+        assert_eq!(pages[0].lines[2].delta, delta);
+
+        assert_eq!(pages[1].lines.len(), 2);
+        assert_eq!(pages[1].lines[0].delta, vec2(100.0, 380.0));
+        assert_eq!(pages[1].lines[1].delta, delta);
+    }
 }

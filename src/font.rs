@@ -10,7 +10,7 @@ pub struct Font<'a> {
     pub widths: Vec<u32>,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct TextMetrics {
     pub ascent: f32,
     pub descent: f32,
