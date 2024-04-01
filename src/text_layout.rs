@@ -187,7 +187,8 @@ fn layout_block<'a>(
                     }
                 }
                 TextAlign::Justify => {
-                    for line in &mut lines {
+                    let line_count = lines.len();
+                    for line in &mut lines[0..line_count.saturating_sub(1)] {
                         let remaining_width = target_width - line.text_total_width;
 
                         let mut num_whitespace_gaps = 0;
