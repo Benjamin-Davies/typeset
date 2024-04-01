@@ -104,3 +104,101 @@ impl Mul<f32> for TextMetrics {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::font::{Font, TextMetrics};
+
+    fn sha256_as_hex(data: &[u8]) -> String {
+        use ring::digest;
+
+        let hash = digest::digest(&digest::SHA256, data);
+        hash.as_ref()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+    }
+
+    #[test]
+    fn test_font_hash() {
+        let font = Font::default();
+
+        let hash = sha256_as_hex(font.data);
+        assert_eq!(
+            hash,
+            "01d6ee04157e31417f79c2a1beb9a578e0ebcf3ac2f9bc34a7d8d8d973e3081f",
+        );
+    }
+
+    #[test]
+    fn test_font_details() {
+        let font = Font::default();
+
+        assert_eq!(font.ps_name, "NotoSerif");
+
+        assert_eq!(font.char_range, '\x00'..='\x7F');
+        assert_eq!(font.widths.len(), 128);
+        assert_eq!(font.widths[b'M' as usize], 937);
+        assert_eq!(font.widths[b'N' as usize], 763);
+        assert_eq!(font.widths[b'm' as usize], 944);
+        assert_eq!(font.widths[b'n' as usize], 645);
+
+        let metrics = font.metrics();
+        assert_eq!(metrics.ascent, 1.0688477);
+        assert_eq!(metrics.descent, -0.29296875);
+        assert_eq!(metrics.line_gap, 0.0);
+    }
+
+    #[test]
+    fn test_to_milli_em() {
+        let font = Font::default();
+
+        // The default font's `units_per_em` is 2048.
+        assert_eq!(font.to_milli_em(0), 0);
+        assert_eq!(font.to_milli_em(256), 125);
+        assert_eq!(font.to_milli_em(-512), -250);
+    }
+
+    #[test]
+    fn test_metrics_max() {
+        let metrics1 = TextMetrics {
+            ascent: 1.2,
+            descent: -0.2,
+            line_gap: 0.0,
+        };
+        let metrics2 = TextMetrics {
+            ascent: 1.0,
+            descent: -0.5,
+            line_gap: 0.1,
+        };
+
+        let max_metrics = metrics1.max(metrics2);
+        assert_eq!(max_metrics.ascent, 1.2);
+        assert_eq!(max_metrics.descent, -0.5);
+        assert_eq!(max_metrics.line_gap, 0.1);
+    }
+
+    #[test]
+    fn test_line_height() {
+        let metrics = TextMetrics {
+            ascent: 1.0688477,
+            descent: -0.29296875,
+            line_gap: 0.0,
+        };
+        assert_eq!(metrics.line_height(), 1.3618164);
+    }
+
+    #[test]
+    fn test_metrics_mul() {
+        let metrics = TextMetrics {
+            ascent: 1.0688477,
+            descent: -0.29296875,
+            line_gap: 0.0,
+        };
+
+        let scaled_metrics = metrics * 12.0;
+        assert_eq!(scaled_metrics.ascent, 12.826172);
+        assert_eq!(scaled_metrics.descent, -3.515625);
+        assert_eq!(scaled_metrics.line_gap, 0.0);
+    }
+}

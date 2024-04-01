@@ -198,6 +198,7 @@ name = "typeset"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "ring",
  "ttf-parser",
  "ureq",
 ]
