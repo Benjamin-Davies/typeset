@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use glam::{vec2, Vec2};
 
 use crate::{
-    document::{Block, Document, Inline, Style, TextAlign},
+    document::{Block, Document, Inline, Style, TextAlign, TextBlock},
     font::{Font, TextMetrics},
 };
 
@@ -36,18 +36,20 @@ pub fn layout_document<'a>(document: &Document<'a>) -> Vec<Page<'a>> {
     let target_width = document.page_size.x - 2.0 * document.margin;
     let target_height = document.page_size.y - 2.0 * document.margin;
 
-    let mut lines = Vec::new();
-    for block in &document.blocks {
-        let mut block_lines = layout_block(&document.fonts, target_width, block);
+    let lines = document
+        .blocks
+        .iter()
+        .flat_map(|block| layout_block(&document.fonts, target_width, block))
+        .collect::<Vec<_>>();
 
-        if let Some(first_line) = block_lines.first_mut() {
-            first_line.delta.y -= PARAGRAPH_GAP;
-            first_line.text_metrics.line_gap += PARAGRAPH_GAP;
-        }
+    layout_pages(lines, target_height, document)
+}
 
-        lines.append(&mut block_lines);
-    }
-
+fn layout_pages<'a>(
+    lines: Vec<Line<'a>>,
+    target_height: f32,
+    document: &Document<'a>,
+) -> Vec<Page<'a>> {
     let mut pages = Vec::new();
     let mut current_page = Page::default();
     let mut current_page_height = 0.0;
@@ -86,129 +88,140 @@ fn layout_block<'a>(
 ) -> Vec<Line<'a>> {
     match block {
         Block::Text(block) => {
-            // Split block into chunks
             let chunks = block
                 .inlines
                 .iter()
                 .flat_map(|inline| chunk_inline(fonts, inline))
                 .collect::<Vec<_>>();
 
-            // Organise chunks into lines
-            let mut lines = Vec::<Line>::new();
-            let mut line_start = 0;
-            let mut possible_break = 0;
-            let mut width_to_break = 0.0;
-            let mut x = 0.0;
-            let mut current_line_text_metrics = TextMetrics::default();
-            for (i, chunk) in chunks.iter().enumerate() {
-                if chunk.is_whitespace && !chunks[i.saturating_sub(1)].is_whitespace {
-                    width_to_break = x;
-                    possible_break = i;
-                }
+            let mut lines = layout_lines(target_width, chunks);
 
-                if possible_break > line_start && x - chunk.left_adjust + chunk.width > target_width
-                {
-                    let mut line_spacing =
-                        current_line_text_metrics.line_gap + current_line_text_metrics.ascent;
-                    if let Some(prev_line) = lines.last() {
-                        line_spacing -= prev_line.text_metrics.descent;
-                    }
+            align_lines(block, target_width, &mut lines);
 
-                    let line = Line {
-                        chunks: chunks[line_start..possible_break].to_vec(),
-                        text_metrics: current_line_text_metrics,
-                        text_total_width: width_to_break,
-                        delta: vec2(0.0, -line_spacing),
-                    };
-                    lines.push(line);
-
-                    line_start = possible_break;
-                    x = chunk.width;
-                    current_line_text_metrics = chunk.text_metrics;
-
-                    while let Some(next) = chunks.get(line_start) {
-                        if next.is_whitespace {
-                            line_start += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                } else if i >= line_start {
-                    if i == line_start {
-                        x = 0.0;
-                    }
-                    x += chunk.width;
-                    current_line_text_metrics = current_line_text_metrics.max(chunk.text_metrics);
-                }
-            }
-
-            // Add the last line if there are any chunks left
-            if line_start < chunks.len() {
-                let mut line_spacing =
-                    current_line_text_metrics.line_gap + current_line_text_metrics.ascent;
-                if let Some(prev_line) = lines.last() {
-                    line_spacing -= prev_line.text_metrics.descent;
-                }
-
-                let line = Line {
-                    chunks: chunks[line_start..].to_vec(),
-                    text_metrics: current_line_text_metrics,
-                    text_total_width: x,
-                    delta: vec2(0.0, -line_spacing),
-                };
-                lines.push(line);
-            }
-
-            #[cfg(debug_assertions)]
-            for line in &lines {
-                debug_assert_eq!(
-                    line.chunks.iter().map(|c| c.width).sum::<f32>(),
-                    line.text_total_width,
-                );
-            }
-
-            // Adjust alignment
-            match block.align {
-                TextAlign::Left => {} // Do nothing
-                TextAlign::Center => {
-                    for line in &mut lines {
-                        let remaining_width = target_width - line.text_total_width;
-                        if let Some(first_chunk) = line.chunks.first_mut() {
-                            first_chunk.left_adjust = -0.5 * remaining_width;
-                        }
-                    }
-                }
-                TextAlign::Right => {
-                    for line in &mut lines {
-                        let remaining_width = target_width - line.text_total_width;
-                        if let Some(first_chunk) = line.chunks.first_mut() {
-                            first_chunk.left_adjust = -remaining_width;
-                        }
-                    }
-                }
-                TextAlign::Justify => {
-                    let line_count = lines.len();
-                    for line in &mut lines[0..line_count.saturating_sub(1)] {
-                        let remaining_width = target_width - line.text_total_width;
-
-                        let mut num_whitespace_gaps = 0;
-                        for i in 1..line.chunks.len() {
-                            if line.chunks[i - 1].is_whitespace || line.chunks[i].is_whitespace {
-                                num_whitespace_gaps += 1;
-                            }
-                        }
-
-                        let gap_width = remaining_width / num_whitespace_gaps as f32;
-                        for i in 1..line.chunks.len() {
-                            if line.chunks[i - 1].is_whitespace || line.chunks[i].is_whitespace {
-                                line.chunks[i].left_adjust = -gap_width;
-                            }
-                        }
-                    }
-                }
+            if let Some(first_line) = lines.first_mut() {
+                first_line.delta.y -= PARAGRAPH_GAP;
+                first_line.text_metrics.line_gap += PARAGRAPH_GAP;
             }
 
             lines
+        }
+    }
+}
+
+fn layout_lines(target_width: f32, chunks: Vec<Chunk>) -> Vec<Line> {
+    let mut lines = Vec::<Line>::new();
+    let mut line_start = 0;
+    let mut possible_break = 0;
+    let mut width_to_break = 0.0;
+    let mut x = 0.0;
+    let mut current_line_text_metrics = TextMetrics::default();
+    for (i, chunk) in chunks.iter().enumerate() {
+        if chunk.is_whitespace && !chunks[i.saturating_sub(1)].is_whitespace {
+            width_to_break = x;
+            possible_break = i;
+        }
+
+        if possible_break > line_start && x - chunk.left_adjust + chunk.width > target_width {
+            let mut line_spacing =
+                current_line_text_metrics.line_gap + current_line_text_metrics.ascent;
+            if let Some(prev_line) = lines.last() {
+                line_spacing -= prev_line.text_metrics.descent;
+            }
+
+            let line = Line {
+                chunks: chunks[line_start..possible_break].to_vec(),
+                text_metrics: current_line_text_metrics,
+                text_total_width: width_to_break,
+                delta: vec2(0.0, -line_spacing),
+            };
+            lines.push(line);
+
+            line_start = possible_break;
+            x = chunk.width;
+            current_line_text_metrics = chunk.text_metrics;
+
+            while let Some(next) = chunks.get(line_start) {
+                if next.is_whitespace {
+                    line_start += 1;
+                } else {
+                    break;
+                }
+            }
+        } else if i >= line_start {
+            if i == line_start {
+                x = 0.0;
+            }
+            x += chunk.width;
+            current_line_text_metrics = current_line_text_metrics.max(chunk.text_metrics);
+        }
+    }
+
+    // Add the last line if there are any chunks left
+    if line_start < chunks.len() {
+        let mut line_spacing =
+            current_line_text_metrics.line_gap + current_line_text_metrics.ascent;
+        if let Some(prev_line) = lines.last() {
+            line_spacing -= prev_line.text_metrics.descent;
+        }
+
+        let line = Line {
+            chunks: chunks[line_start..].to_vec(),
+            text_metrics: current_line_text_metrics,
+            text_total_width: x,
+            delta: vec2(0.0, -line_spacing),
+        };
+        lines.push(line);
+    }
+
+    #[cfg(debug_assertions)]
+    for line in &lines {
+        debug_assert_eq!(
+            line.chunks.iter().map(|c| c.width).sum::<f32>(),
+            line.text_total_width,
+        );
+    }
+
+    lines
+}
+
+fn align_lines(block: &TextBlock, target_width: f32, lines: &mut Vec<Line>) {
+    match block.align {
+        TextAlign::Left => {} // Do nothing
+        TextAlign::Center => {
+            for line in lines {
+                let remaining_width = target_width - line.text_total_width;
+                if let Some(first_chunk) = line.chunks.first_mut() {
+                    first_chunk.left_adjust = -0.5 * remaining_width;
+                }
+            }
+        }
+        TextAlign::Right => {
+            for line in lines {
+                let remaining_width = target_width - line.text_total_width;
+                if let Some(first_chunk) = line.chunks.first_mut() {
+                    first_chunk.left_adjust = -remaining_width;
+                }
+            }
+        }
+        TextAlign::Justify => {
+            let line_count = lines.len();
+            for line in &mut lines[0..line_count.saturating_sub(1)] {
+                let remaining_width = target_width - line.text_total_width;
+
+                let mut num_whitespace_gaps = 0;
+                for i in 1..line.chunks.len() {
+                    if line.chunks[i - 1].is_whitespace || line.chunks[i].is_whitespace {
+                        num_whitespace_gaps += 1;
+                    }
+                }
+
+                let gap_width = remaining_width / num_whitespace_gaps as f32;
+                for i in 1..line.chunks.len() {
+                    if line.chunks[i - 1].is_whitespace || line.chunks[i].is_whitespace {
+                        line.chunks[i].left_adjust = -gap_width;
+                    }
+                }
+            }
         }
     }
 }
