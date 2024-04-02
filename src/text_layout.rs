@@ -22,7 +22,7 @@ pub struct Line<'a> {
     pub delta: Vec2,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Chunk<'a> {
     pub text: &'a str,
     pub style: Style<'a>,
@@ -289,13 +289,16 @@ fn chunk_inline<'a>(fonts: &BTreeMap<&str, &'a Font>, inline: &Inline<'a>) -> Ve
 
 #[cfg(test)]
 mod tests {
-    use std::iter;
+    use std::{collections::BTreeMap, iter};
 
     use glam::vec2;
 
-    use crate::{document::Document, font::TextMetrics};
+    use crate::{
+        document::{Block, Document, Inline, Style},
+        font::{Font, TextMetrics},
+    };
 
-    use super::{layout_pages, Line};
+    use super::{chunk_inline, layout_lines, layout_pages, Chunk, Line};
 
     #[test]
     fn test_layout_pages() {
@@ -335,5 +338,71 @@ mod tests {
         assert_eq!(pages[1].lines.len(), 2);
         assert_eq!(pages[1].lines[0].delta, vec2(100.0, 380.0));
         assert_eq!(pages[1].lines[1].delta, delta);
+    }
+
+    #[test]
+    fn test_layout_lines() {
+        let target_width = 49.0;
+
+        let word = Chunk {
+            width: 20.0,
+            is_whitespace: false,
+            ..Chunk::default()
+        };
+        let space = Chunk {
+            width: 5.0,
+            is_whitespace: true,
+            ..Chunk::default()
+        };
+        let chunks = vec![
+            word.clone(),
+            space.clone(),
+            word.clone(),
+            space.clone(),
+            word.clone(),
+        ];
+
+        let lines = layout_lines(target_width, chunks);
+
+        assert_eq!(lines.len(), 2);
+
+        assert_eq!(lines[0].chunks.len(), 3);
+        assert_eq!(lines[0].chunks[0], word);
+        assert_eq!(lines[0].chunks[1], space);
+        assert_eq!(lines[0].chunks[2], word);
+
+        assert_eq!(lines[1].chunks.len(), 1);
+        assert_eq!(lines[1].chunks[0], word);
+    }
+
+    #[test]
+    fn text_chunk_inline() {
+        let mut fonts = BTreeMap::new();
+        let font = Font::default();
+        fonts.insert(&*font.ps_name, &font);
+
+        let inline = Inline {
+            text: "Lorem ipsum dolor sit amet.",
+            style: Style {
+                font: &font.ps_name,
+                font_size: 12.0,
+            },
+        };
+
+        let chunks = chunk_inline(&fonts, &inline);
+
+        assert_eq!(chunks.len(), 9);
+
+        assert_eq!(chunks[0].text, "Lorem");
+        assert_eq!(chunks[0].width, 37.816406);
+        assert_eq!(chunks[0].is_whitespace, false);
+
+        assert_eq!(chunks[1].text, " ");
+        assert_eq!(chunks[1].width, 3.1171875);
+        assert_eq!(chunks[1].is_whitespace, true);
+
+        assert_eq!(chunks[2].text, "ipsum");
+        assert_eq!(chunks[2].width, 35.572266);
+        assert_eq!(chunks[2].is_whitespace, false);
     }
 }
