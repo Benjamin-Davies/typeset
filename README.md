@@ -1,6 +1,8 @@
 # Typeset
 
-This is a simple typesetting program with the aim of generating PDF files with prose and equations.
+A small experiment in positioning text on a page. So far I've implemented line wrapping, justification and font mixing. Eventually I might add support for formulas as well as prose.
+
+Running `cargo test` downloads Noto Serif and generates some test PDFs in the `output` folder.
 
 ## TODO
 
@@ -11,6 +13,6 @@ This is a simple typesetting program with the aim of generating PDF files with p
 - [x] Justified text: Given a list of paragraphs of glyphs, I want the text within each paragraph to be justified.
 - [x] Inline formatting: Given a list of blocks, I want to be able to assign a different font-size, weight or emphasis to any sequence of glyphs and have their base-lines line up.
 - [x] Page breaks: Given a document AST, when I render it and it needs more than one page it should break the content into pages.
-- [ ] Write unit tests and refactor
+- [x] Write unit tests and refactor
 - [ ] Formula parsing: Given a LaTeX fomula, I want to parse an AST.
 - [ ] Formula drawing: Given a LaTeX formula AST, I want to draw it as a block in combination with text blocks.
