@@ -1,6 +1,6 @@
 # Typeset
 
-A small experiment in positioning text on a page. So far I've implemented line wrapping, justification and font mixing. Eventually I might add support for formulas as well as prose.
+A small experiment in positioning text on a page. So far I've implemented line wrapping, justification and font mixing. Eventually I might add support for formulas in addition to prose.
 
 Running `cargo test` downloads Noto Serif and generates some test PDFs in the `output` folder.
 
