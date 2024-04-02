@@ -98,7 +98,8 @@ fn test_example() {
     pdf_builder.catalog(&document.fonts);
     let content = pdf_builder.build();
 
-    fs::write("target/output.pdf", &content).unwrap();
+    fs::create_dir_all("output").unwrap();
+    fs::write("output/lorem_ipsum.pdf", &content).unwrap();
 
     assert_eq!(content, include_bytes!("../examples/lorem_ipsum.pdf"));
 }
