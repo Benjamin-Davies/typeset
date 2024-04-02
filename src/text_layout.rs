@@ -291,14 +291,14 @@ fn chunk_inline<'a>(fonts: &BTreeMap<&str, &'a Font>, inline: &Inline<'a>) -> Ve
 mod tests {
     use std::{collections::BTreeMap, iter};
 
-    use glam::vec2;
+    use glam::{vec2, Vec2};
 
     use crate::{
-        document::{Block, Document, Inline, Style},
+        document::{Document, Inline, Style, TextAlign, TextBlock},
         font::{Font, TextMetrics},
     };
 
-    use super::{chunk_inline, layout_lines, layout_pages, Chunk, Line};
+    use super::{align_lines, chunk_inline, layout_lines, layout_pages, Chunk, Line};
 
     #[test]
     fn test_layout_pages() {
@@ -373,6 +373,170 @@ mod tests {
 
         assert_eq!(lines[1].chunks.len(), 1);
         assert_eq!(lines[1].chunks[0], word);
+    }
+
+    #[test]
+    fn test_align_left() {
+        let block = TextBlock {
+            inlines: Default::default(),
+            align: TextAlign::Left,
+        };
+        let target_width = 49.0;
+
+        let word = Chunk {
+            width: 20.0,
+            is_whitespace: false,
+            ..Chunk::default()
+        };
+        let space = Chunk {
+            width: 5.0,
+            is_whitespace: true,
+            ..Chunk::default()
+        };
+        let mut lines = vec![
+            Line {
+                chunks: vec![word.clone(), space.clone(), word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 45.0,
+                delta: Vec2::ZERO,
+            },
+            Line {
+                chunks: vec![word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 20.0,
+                delta: Vec2::ZERO,
+            },
+        ];
+
+        align_lines(&block, target_width, &mut lines);
+
+        assert_eq!(lines[0].chunks[0].left_adjust, 0.0);
+        assert_eq!(lines[0].chunks[1].left_adjust, 0.0);
+        assert_eq!(lines[0].chunks[2].left_adjust, 0.0);
+        assert_eq!(lines[1].chunks[0].left_adjust, 0.0);
+    }
+
+    #[test]
+    fn test_align_center() {
+        let block = TextBlock {
+            inlines: Default::default(),
+            align: TextAlign::Center,
+        };
+        let target_width = 49.0;
+
+        let word = Chunk {
+            width: 20.0,
+            is_whitespace: false,
+            ..Chunk::default()
+        };
+        let space = Chunk {
+            width: 5.0,
+            is_whitespace: true,
+            ..Chunk::default()
+        };
+        let mut lines = vec![
+            Line {
+                chunks: vec![word.clone(), space.clone(), word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 45.0,
+                delta: Vec2::ZERO,
+            },
+            Line {
+                chunks: vec![word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 20.0,
+                delta: Vec2::ZERO,
+            },
+        ];
+
+        align_lines(&block, target_width, &mut lines);
+
+        assert_eq!(lines[0].chunks[0].left_adjust, -2.0);
+        assert_eq!(lines[0].chunks[1].left_adjust, 0.0);
+        assert_eq!(lines[0].chunks[2].left_adjust, 0.0);
+        assert_eq!(lines[1].chunks[0].left_adjust, -14.5);
+    }
+
+    #[test]
+    fn test_align_right() {
+        let block = TextBlock {
+            inlines: Default::default(),
+            align: TextAlign::Right,
+        };
+        let target_width = 49.0;
+
+        let word = Chunk {
+            width: 20.0,
+            is_whitespace: false,
+            ..Chunk::default()
+        };
+        let space = Chunk {
+            width: 5.0,
+            is_whitespace: true,
+            ..Chunk::default()
+        };
+        let mut lines = vec![
+            Line {
+                chunks: vec![word.clone(), space.clone(), word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 45.0,
+                delta: Vec2::ZERO,
+            },
+            Line {
+                chunks: vec![word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 20.0,
+                delta: Vec2::ZERO,
+            },
+        ];
+
+        align_lines(&block, target_width, &mut lines);
+
+        assert_eq!(lines[0].chunks[0].left_adjust, -4.0);
+        assert_eq!(lines[0].chunks[1].left_adjust, 0.0);
+        assert_eq!(lines[0].chunks[2].left_adjust, 0.0);
+        assert_eq!(lines[1].chunks[0].left_adjust, -29.0);
+    }
+
+    #[test]
+    fn test_align_justify() {
+        let block = TextBlock {
+            inlines: Default::default(),
+            align: TextAlign::Justify,
+        };
+        let target_width = 49.0;
+
+        let word = Chunk {
+            width: 20.0,
+            is_whitespace: false,
+            ..Chunk::default()
+        };
+        let space = Chunk {
+            width: 5.0,
+            is_whitespace: true,
+            ..Chunk::default()
+        };
+        let mut lines = vec![
+            Line {
+                chunks: vec![word.clone(), space.clone(), word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 45.0,
+                delta: Vec2::ZERO,
+            },
+            Line {
+                chunks: vec![word.clone()],
+                text_metrics: Default::default(),
+                text_total_width: 20.0,
+                delta: Vec2::ZERO,
+            },
+        ];
+
+        align_lines(&block, target_width, &mut lines);
+
+        assert_eq!(lines[0].chunks[0].left_adjust, 0.0);
+        assert_eq!(lines[0].chunks[1].left_adjust, -2.0);
+        assert_eq!(lines[0].chunks[2].left_adjust, -2.0);
+        assert_eq!(lines[1].chunks[0].left_adjust, 0.0);
     }
 
     #[test]
