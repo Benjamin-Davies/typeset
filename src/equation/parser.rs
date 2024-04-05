@@ -10,7 +10,10 @@ use super::{
 pub fn parse_latex(source: &str) -> Sequence {
     let mut scanner = LatexScanner::new(source).peekable();
 
-    parse_sequence(&mut scanner)
+    let sequence = parse_sequence(&mut scanner);
+    assert_eq!(scanner.next(), None, "Unexpected token");
+
+    sequence
 }
 
 fn parse_sequence(scanner: &mut Peekable<LatexScanner>) -> Sequence {
