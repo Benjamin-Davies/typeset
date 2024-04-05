@@ -1,5 +1,7 @@
 use std::iter::Peekable;
 
+use crate::equation::Delimiter;
+
 use super::{
     scanner::{LatexScanner, Token},
     Fragment, Sequence,
@@ -24,6 +26,28 @@ fn parse_sequence(scanner: &mut Peekable<LatexScanner>) -> Sequence {
 fn parse_fragment(scanner: &mut Peekable<LatexScanner>) -> Option<Fragment> {
     match *scanner.peek()? {
         Token::Keyword(keyword) => match keyword {
+            "left" => {
+                scanner.next();
+                let delimiter = match scanner.next() {
+                    Some(Token::Char('(')) => Delimiter::Paren,
+                    Some(Token::Char('[')) => Delimiter::Bracket,
+                    Some(Token::Char('{')) => Delimiter::Brace,
+                    _ => panic!("Unknown delimiter"),
+                };
+                let right_delimiter = match delimiter {
+                    Delimiter::Paren => ')',
+                    Delimiter::Bracket => ']',
+                    Delimiter::Brace => '}',
+                };
+
+                let sequence = parse_sequence(scanner);
+
+                assert_eq!(scanner.next(), Some(Token::Keyword("right")));
+                assert_eq!(scanner.next(), Some(Token::Char(right_delimiter)));
+
+                Some(Fragment::Delimited(Box::new((delimiter, sequence))))
+            }
+            "right" => None,
             "frac" => {
                 scanner.next();
                 let numerator = parse_group(scanner);
@@ -148,6 +172,8 @@ fn parse_keyword_symbol(keyword: &str) -> Option<char> {
 
         "{" => Some('{'),
         "}" => Some('}'),
+        "^" => Some('^'),
+        "_" => Some('_'),
 
         _ => None,
     }
@@ -203,6 +229,55 @@ mod tests {
                     Fragment::Superscript(Box::new(Fragment::Group(Box::new(Sequence {
                         fragments: vec![Fragment::Char('i'), Fragment::Char('θ')],
                     })))),
+                ],
+            },
+        );
+    }
+
+    #[test]
+    fn test_big_delim() {
+        let sequence = parse_latex(
+            r"\alpha_\beta(\gamma, \theta) = \left[\frac{\beta}{\gamma}\right] \cdot \left(e^{i\theta}\right)",
+        );
+        assert_eq!(
+            sequence,
+            Sequence {
+                fragments: vec![
+                    Fragment::Char('α'),
+                    Fragment::Subscript(Box::new(Fragment::Char('β'))),
+                    Fragment::Char('('),
+                    Fragment::Char('γ'),
+                    Fragment::Char(','),
+                    Fragment::Char('θ'),
+                    Fragment::Char(')'),
+                    Fragment::Char('='),
+                    Fragment::Delimited(Box::new((
+                        Delimiter::Bracket,
+                        Sequence {
+                            fragments: vec![Fragment::Fraction(Box::new((
+                                Sequence {
+                                    fragments: vec![Fragment::Char('β')],
+                                },
+                                Sequence {
+                                    fragments: vec![Fragment::Char('γ')],
+                                },
+                            )))],
+                        }
+                    ))),
+                    Fragment::Char('⋅'),
+                    Fragment::Delimited(Box::new((
+                        Delimiter::Paren,
+                        Sequence {
+                            fragments: vec![
+                                Fragment::Char('e'),
+                                Fragment::Superscript(Box::new(Fragment::Group(Box::new(
+                                    Sequence {
+                                        fragments: vec![Fragment::Char('i'), Fragment::Char('θ')],
+                                    },
+                                )))),
+                            ],
+                        },
+                    ))),
                 ],
             },
         );
