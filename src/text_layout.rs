@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use glam::{vec2, Vec2};
+use itertools::Itertools;
+use thiserror::Error;
 
 use crate::{
     document::{Block, Document, Inline, Style, TextAlign, TextBlock},
@@ -32,17 +34,30 @@ pub struct Chunk<'a> {
     pub left_adjust: f32,
 }
 
-pub fn layout_document<'a>(document: &Document<'a>) -> Vec<Page<'a>> {
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("missing font '{0}'")]
+    MissingFont(String),
+    #[error("missing glyph '{0}'")]
+    MissingGlyph(char),
+    #[error("missing glyph data '{0}'")]
+    MissingGlyphData(char),
+}
+
+pub fn layout_document<'a>(document: &Document<'a>) -> Result<Vec<Page<'a>>, Error> {
     let target_width = document.page_size.x - 2.0 * document.margin;
     let target_height = document.page_size.y - 2.0 * document.margin;
 
     let lines = document
         .blocks
         .iter()
-        .flat_map(|block| layout_block(&document.fonts, target_width, block))
-        .collect::<Vec<_>>();
+        .map(|block| layout_block(&document.fonts, target_width, block))
+        .flatten_ok()
+        .collect::<Result<Vec<_>, _>>()?;
 
-    layout_pages(lines, target_height, document)
+    let pages = layout_pages(lines, target_height, document);
+
+    Ok(pages)
 }
 
 fn layout_pages<'a>(
@@ -85,14 +100,15 @@ fn layout_block<'a>(
     fonts: &BTreeMap<&str, &'a Font>,
     target_width: f32,
     block: &Block<'a>,
-) -> Vec<Line<'a>> {
+) -> Result<Vec<Line<'a>>, Error> {
     match block {
         Block::Text(block) => {
             let chunks = block
                 .inlines
                 .iter()
-                .flat_map(|inline| chunk_inline(fonts, inline))
-                .collect::<Vec<_>>();
+                .map(|inline| chunk_inline(fonts, inline))
+                .flatten_ok()
+                .collect::<Result<Vec<_>, _>>()?;
 
             let mut lines = layout_lines(target_width, chunks);
 
@@ -103,7 +119,7 @@ fn layout_block<'a>(
                 first_line.text_metrics.line_gap += PARAGRAPH_GAP;
             }
 
-            lines
+            Ok(lines)
         }
     }
 }
@@ -226,8 +242,13 @@ fn align_lines(block: &TextBlock, target_width: f32, lines: &mut Vec<Line>) {
     }
 }
 
-fn chunk_inline<'a>(fonts: &BTreeMap<&str, &'a Font>, inline: &Inline<'a>) -> Vec<Chunk<'a>> {
-    let font = fonts.get(inline.style.font).unwrap();
+fn chunk_inline<'a>(
+    fonts: &BTreeMap<&str, &'a Font>,
+    inline: &Inline<'a>,
+) -> Result<Vec<Chunk<'a>>, Error> {
+    let font = fonts
+        .get(inline.style.font)
+        .ok_or_else(|| Error::MissingFont(inline.style.font.to_owned()))?;
     let font_scale = inline.style.font_size / font.face.units_per_em() as f32;
 
     let text_metrics = font.metrics() * inline.style.font_size;
@@ -237,8 +258,12 @@ fn chunk_inline<'a>(fonts: &BTreeMap<&str, &'a Font>, inline: &Inline<'a>) -> Ve
     let mut current_chunk_start = 0;
     let mut current_chunk_width = 0.0;
     for (i, c) in inline.text.char_indices() {
-        let glyph_id = font.face.glyph_index(c).unwrap();
-        let width = font.face.glyph_hor_advance(glyph_id).unwrap() as f32 * font_scale;
+        let glyph_id = font.face.glyph_index(c).ok_or(Error::MissingGlyph(c))?;
+        let width = font
+            .face
+            .glyph_hor_advance(glyph_id)
+            .ok_or(Error::MissingGlyphData(c))? as f32
+            * font_scale;
 
         if c.is_whitespace() {
             let next_i = i + c.len_utf8();
@@ -284,7 +309,7 @@ fn chunk_inline<'a>(fonts: &BTreeMap<&str, &'a Font>, inline: &Inline<'a>) -> Ve
         chunks.push(final_chunk);
     }
 
-    chunks
+    Ok(chunks)
 }
 
 #[cfg(test)]
@@ -553,20 +578,20 @@ mod tests {
             },
         };
 
-        let chunks = chunk_inline(&fonts, &inline);
+        let chunks = chunk_inline(&fonts, &inline).unwrap();
 
         assert_eq!(chunks.len(), 9);
 
         assert_eq!(chunks[0].text, "Lorem");
         assert_eq!(chunks[0].width, 37.816406);
-        assert_eq!(chunks[0].is_whitespace, false);
+        assert!(!chunks[0].is_whitespace);
 
         assert_eq!(chunks[1].text, " ");
         assert_eq!(chunks[1].width, 3.1171875);
-        assert_eq!(chunks[1].is_whitespace, true);
+        assert!(chunks[1].is_whitespace);
 
         assert_eq!(chunks[2].text, "ipsum");
         assert_eq!(chunks[2].width, 35.572266);
-        assert_eq!(chunks[2].is_whitespace, false);
+        assert!(!chunks[2].is_whitespace);
     }
 }

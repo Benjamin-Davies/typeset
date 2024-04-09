@@ -1,5 +1,6 @@
 use std::ops::{Mul, RangeInclusive};
 
+use thiserror::Error;
 use ttf_parser::{name_id, Face};
 
 pub struct Font<'a> {
@@ -17,6 +18,16 @@ pub struct TextMetrics {
     pub line_gap: f32,
 }
 
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("failed to parse face: {0}")]
+    FaceParsing(#[from] ttf_parser::FaceParsingError),
+    #[error("missing post script name")]
+    MissingPostScriptName,
+    #[error("non-unicode string")]
+    NonUnicodeString,
+}
+
 const FONT_DATA: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/noto-serif/NotoSerif-Regular.ttf"
@@ -24,24 +35,25 @@ const FONT_DATA: &[u8] = include_bytes!(concat!(
 
 impl Default for Font<'static> {
     fn default() -> Self {
-        let font = Self::new(FONT_DATA);
+        let font = Self::new(FONT_DATA).unwrap();
         assert_eq!(font.ps_name, "NotoSerif");
         font
     }
 }
 
 impl<'a> Font<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
-        let face = Face::parse(data, 0).unwrap();
+    pub fn new(data: &'a [u8]) -> Result<Self, Error> {
+        let face = Face::parse(data, 0)?;
 
         let ps_name = face
             .names()
             .into_iter()
             .find(|name| name.name_id == name_id::POST_SCRIPT_NAME)
-            .unwrap()
+            .ok_or(Error::MissingPostScriptName)?
             .to_string()
-            .unwrap();
+            .ok_or(Error::NonUnicodeString)?;
 
+        // TODO: Support non-ASCII characters.
         let char_range = '\x00'..='\x7F';
         let units_per_em = face.units_per_em() as u32;
         let widths = char_range
@@ -55,13 +67,13 @@ impl<'a> Font<'a> {
             .map(|w| w.unwrap_or(0))
             .collect::<Vec<_>>();
 
-        Self {
+        Ok(Self {
             data,
             face,
             ps_name,
             char_range,
             widths,
-        }
+        })
     }
 
     /// Converts from font units to thousanths of an em.
@@ -109,6 +121,7 @@ impl Mul<f32> for TextMetrics {
 mod tests {
     use crate::font::{Font, TextMetrics};
 
+    #[allow(clippy::format_collect)] // We don't care about small optimisations in tests.
     fn sha256_as_hex(data: &[u8]) -> String {
         use ring::digest;
 

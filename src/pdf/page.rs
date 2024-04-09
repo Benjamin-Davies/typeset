@@ -12,6 +12,12 @@ pub struct PageBuilder {
     content: Vec<u8>,
 }
 
+impl Default for PageBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PageBuilder {
     pub fn new() -> Self {
         Self {
@@ -20,19 +26,19 @@ impl PageBuilder {
     }
 
     fn begin_text(&mut self) {
-        write!(self.content, "BT\n").unwrap();
+        writeln!(self.content, "BT").unwrap();
     }
 
     fn end_text(&mut self) {
-        write!(self.content, "ET\n").unwrap();
+        writeln!(self.content, "ET").unwrap();
     }
 
     fn style(&mut self, style: &Style) {
-        write!(self.content, "/{} {} Tf\n", style.font, style.font_size).unwrap();
+        writeln!(self.content, "/{} {} Tf", style.font, style.font_size).unwrap();
     }
 
     fn text_line_delta(&mut self, delta: Vec2) {
-        write!(self.content, "{} {} Td\n", delta.x, delta.y).unwrap();
+        writeln!(self.content, "{} {} Td", delta.x, delta.y).unwrap();
     }
 
     pub fn text(mut self, lines: &[Line]) -> Self {
@@ -55,7 +61,7 @@ impl PageBuilder {
             write!(self.content, "[").unwrap();
             for chunk in &line.chunks {
                 if chunk.style != current_style {
-                    write!(self.content, "] TJ\n").unwrap();
+                    writeln!(self.content, "] TJ").unwrap();
                     current_style = chunk.style;
                     self.style(&current_style);
                     write!(self.content, "[").unwrap();
@@ -69,7 +75,7 @@ impl PageBuilder {
                 )
                 .unwrap();
             }
-            write!(self.content, "] TJ\n").unwrap();
+            writeln!(self.content, "] TJ").unwrap();
         }
         self.end_text();
 

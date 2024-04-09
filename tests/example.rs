@@ -17,11 +17,13 @@ fn test_example() {
     let bold_font = Font::new(include_bytes!(concat!(
         env!("OUT_DIR"),
         "/noto-serif/NotoSerif-Bold.ttf"
-    )));
+    )))
+    .unwrap();
     let italic_font = Font::new(include_bytes!(concat!(
         env!("OUT_DIR"),
         "/noto-serif/NotoSerif-Italic.ttf"
-    )));
+    )))
+    .unwrap();
     let text = include_str!("../examples/lorem_ipsum.txt");
 
     let style = Style {
@@ -88,7 +90,7 @@ fn test_example() {
         margin: 72.0,
     };
 
-    let pages = layout_document(&document);
+    let pages = layout_document(&document).unwrap();
 
     let mut pdf_builder = PDFBuilder::new();
     for page in pages {

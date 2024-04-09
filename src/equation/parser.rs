@@ -1,5 +1,7 @@
 use std::iter::Peekable;
 
+use thiserror::Error;
+
 use crate::equation::Delimiter;
 
 use super::{
@@ -7,35 +9,59 @@ use super::{
     Fragment, Sequence,
 };
 
-pub fn parse_latex(source: &str) -> Sequence {
-    let mut scanner = LatexScanner::new(source).peekable();
-
-    let sequence = parse_sequence(&mut scanner);
-    assert_eq!(scanner.next(), None, "Unexpected token");
-
-    sequence
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("unexpected end of file")]
+    UnexpectedEof,
+    #[error("expected end of file")]
+    ExpectedEof,
+    #[error("expected fragment")]
+    ExpectedFragment,
+    #[error("expected token: '{0}'")]
+    ExpectedToken(String),
+    #[error("invalid delimiter: '{0}'")]
+    InvalidDelimiter(String),
+    #[error("unknown keyword: '\\{0}'")]
+    UnknownKeyword(String),
 }
 
-fn parse_sequence(scanner: &mut Peekable<LatexScanner>) -> Sequence {
+pub fn parse_latex(source: &str) -> Result<Sequence, Error> {
+    let mut scanner = LatexScanner::new(source).peekable();
+
+    let sequence = parse_sequence(&mut scanner)?;
+    if scanner.peek().is_some() {
+        return Err(Error::ExpectedEof);
+    }
+
+    Ok(sequence)
+}
+
+fn parse_sequence(scanner: &mut Peekable<LatexScanner>) -> Result<Sequence, Error> {
     let mut fragments = Vec::new();
 
-    while let Some(fragment) = parse_fragment(scanner) {
+    while let Some(fragment) = parse_fragment(scanner).map_or_else(
+        |err| match err {
+            Error::ExpectedFragment => Ok(None),
+            _ => Err(err),
+        },
+        |x| Ok(Some(x)),
+    )? {
         fragments.push(fragment);
     }
 
-    Sequence { fragments }
+    Ok(Sequence { fragments })
 }
 
-fn parse_fragment(scanner: &mut Peekable<LatexScanner>) -> Option<Fragment> {
-    match *scanner.peek()? {
+fn parse_fragment(scanner: &mut Peekable<LatexScanner>) -> Result<Fragment, Error> {
+    match *scanner.peek().ok_or(Error::ExpectedFragment)? {
         Token::Keyword(keyword) => match keyword {
             "left" => {
                 scanner.next();
-                let delimiter = match scanner.next() {
-                    Some(Token::Char('(')) => Delimiter::Paren,
-                    Some(Token::Char('[')) => Delimiter::Bracket,
-                    Some(Token::Char('{')) => Delimiter::Brace,
-                    _ => panic!("Unknown delimiter"),
+                let delimiter = match scanner.next().ok_or(Error::UnexpectedEof)? {
+                    Token::Char('(') => Delimiter::Paren,
+                    Token::Char('[') => Delimiter::Bracket,
+                    Token::Char('{') => Delimiter::Brace,
+                    token => return Err(Error::InvalidDelimiter(token.to_string())),
                 };
                 let right_delimiter = match delimiter {
                     Delimiter::Paren => ')',
@@ -43,59 +69,59 @@ fn parse_fragment(scanner: &mut Peekable<LatexScanner>) -> Option<Fragment> {
                     Delimiter::Brace => '}',
                 };
 
-                let sequence = parse_sequence(scanner);
+                let sequence = parse_sequence(scanner)?;
 
-                assert_eq!(scanner.next(), Some(Token::Keyword("right")));
-                assert_eq!(scanner.next(), Some(Token::Char(right_delimiter)));
+                expect_token(scanner, Token::Keyword("right"))?;
+                expect_token(scanner, Token::Char(right_delimiter))?;
 
-                Some(Fragment::Delimited(Box::new((delimiter, sequence))))
+                Ok(Fragment::Delimited(Box::new((delimiter, sequence))))
             }
-            "right" => None,
+            "right" => Err(Error::ExpectedFragment),
             "frac" => {
                 scanner.next();
-                let numerator = parse_group(scanner);
-                let denominator = parse_group(scanner);
-                Some(Fragment::Fraction(Box::new((numerator, denominator))))
+                let numerator = parse_group(scanner)?;
+                let denominator = parse_group(scanner)?;
+                Ok(Fragment::Fraction(Box::new((numerator, denominator))))
             }
             _ => {
                 if let Some(c) = parse_keyword_symbol(keyword) {
                     scanner.next();
-                    Some(Fragment::Char(c))
+                    Ok(Fragment::Char(c))
                 } else {
-                    panic!("Unknown keyword: \\{keyword}");
+                    Err(Error::UnknownKeyword(keyword.to_owned()))
                 }
             }
         },
         Token::Char(c) => match c {
             '{' => {
-                let sequence = parse_group(scanner);
-                Some(Fragment::Group(Box::new(sequence)))
+                let sequence = parse_group(scanner)?;
+                Ok(Fragment::Group(Box::new(sequence)))
             }
-            '}' => None,
+            '}' => Err(Error::ExpectedFragment),
             '^' => {
                 scanner.next();
                 let fragment = parse_fragment(scanner)?;
-                Some(Fragment::Superscript(Box::new(fragment)))
+                Ok(Fragment::Superscript(Box::new(fragment)))
             }
             '_' => {
                 scanner.next();
                 let fragment = parse_fragment(scanner)?;
-                Some(Fragment::Subscript(Box::new(fragment)))
+                Ok(Fragment::Subscript(Box::new(fragment)))
             }
             _ => {
                 scanner.next();
-                Some(Fragment::Char(c))
+                Ok(Fragment::Char(c))
             }
         },
     }
 }
 
-fn parse_group(scanner: &mut Peekable<LatexScanner>) -> Sequence {
-    assert_eq!(scanner.next(), Some(Token::Char('{')));
-    let sequence = parse_sequence(scanner);
-    assert_eq!(scanner.next(), Some(Token::Char('}')));
+fn parse_group(scanner: &mut Peekable<LatexScanner>) -> Result<Sequence, Error> {
+    expect_token(scanner, Token::Char('{'))?;
+    let sequence = parse_sequence(scanner)?;
+    expect_token(scanner, Token::Char('}'))?;
 
-    sequence
+    Ok(sequence)
 }
 
 fn parse_keyword_symbol(keyword: &str) -> Option<char> {
@@ -182,13 +208,21 @@ fn parse_keyword_symbol(keyword: &str) -> Option<char> {
     }
 }
 
+pub fn expect_token(scanner: &mut Peekable<LatexScanner>, expected: Token) -> Result<(), Error> {
+    match scanner.next() {
+        Some(token) if token == expected => Ok(()),
+        Some(token) => Err(Error::ExpectedToken(token.to_string())),
+        None => Err(Error::UnexpectedEof),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_e_mc2() {
-        let sequence = parse_latex(r"E = mc^2");
+        let sequence = parse_latex(r"E = mc^2").unwrap();
         assert_eq!(
             sequence,
             Sequence {
@@ -206,7 +240,8 @@ mod tests {
     #[test]
     fn test_greek_frac() {
         let sequence =
-            parse_latex(r"\alpha_\beta(\gamma, \theta) = \frac{\beta}{\gamma} \cdot e^{i\theta}");
+            parse_latex(r"\alpha_\beta(\gamma, \theta) = \frac{\beta}{\gamma} \cdot e^{i\theta}")
+                .unwrap();
         assert_eq!(
             sequence,
             Sequence {
@@ -241,7 +276,7 @@ mod tests {
     fn test_big_delim() {
         let sequence = parse_latex(
             r"\alpha_\beta(\gamma, \theta) = \left[\frac{\beta}{\gamma}\right] \cdot \left(e^{i\theta}\right)",
-        );
+        ).unwrap();
         assert_eq!(
             sequence,
             Sequence {

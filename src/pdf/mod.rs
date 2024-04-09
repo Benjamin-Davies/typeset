@@ -31,6 +31,12 @@ impl fmt::Display for Ref {
     }
 }
 
+impl Default for PDFBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PDFBuilder {
     pub fn new() -> Self {
         let mut builder = Self {
@@ -69,17 +75,17 @@ impl PDFBuilder {
         let offset = self.content.len() as u32;
         self.xref[id as usize] = XRefEntry::InUse { offset, generation };
 
-        write!(self.content, "{id} {generation} obj\n").unwrap();
+        writeln!(self.content, "{id} {generation} obj").unwrap();
     }
 
     fn end_object(&mut self) {
-        write!(self.content, "endobj\n").unwrap();
+        writeln!(self.content, "endobj").unwrap();
     }
 
     fn stream_object(&mut self, content: &[u8]) -> Ref {
         let ref_ = self.start_object();
-        write!(self.content, "<< /Length {} >>\n", content.len()).unwrap();
-        write!(self.content, "stream\n").unwrap();
+        writeln!(self.content, "<< /Length {} >>", content.len()).unwrap();
+        writeln!(self.content, "stream").unwrap();
         self.content.extend_from_slice(content);
         write!(self.content, "\nendstream\n").unwrap();
         self.end_object();
@@ -89,8 +95,8 @@ impl PDFBuilder {
     fn font(&mut self, font: &Font) -> Ref {
         let len = font.data.len();
         let font_file2 = self.start_object();
-        write!(self.content, "<< /Length {len} /Length1 {len} >>\n",).unwrap();
-        write!(self.content, "stream\n").unwrap();
+        writeln!(self.content, "<< /Length {len} /Length1 {len} >>",).unwrap();
+        writeln!(self.content, "stream").unwrap();
         self.content.extend_from_slice(font.data);
         write!(self.content, "\nendstream\n").unwrap();
         self.end_object();
@@ -231,8 +237,8 @@ impl PDFBuilder {
         };
 
         let start_xref = content.len();
-        write!(content, "xref\n").unwrap();
-        write!(content, "0 {xref_size}\n").unwrap();
+        writeln!(content, "xref").unwrap();
+        writeln!(content, "0 {xref_size}").unwrap();
         for entry in xref {
             let (n, g, c) = match entry {
                 XRefEntry::Free {
@@ -244,12 +250,12 @@ impl PDFBuilder {
             write!(content, "{n:010} {g:05} {c}\r\n").unwrap();
         }
 
-        write!(content, "trailer\n").unwrap();
-        write!(content, "<< /Size {xref_size} /Root {root} >>\n").unwrap();
+        writeln!(content, "trailer").unwrap();
+        writeln!(content, "<< /Size {xref_size} /Root {root} >>").unwrap();
 
-        write!(content, "startxref\n").unwrap();
-        write!(content, "{start_xref}\n").unwrap();
-        write!(content, "%%EOF\n").unwrap();
+        writeln!(content, "startxref").unwrap();
+        writeln!(content, "{start_xref}").unwrap();
+        writeln!(content, "%%EOF").unwrap();
 
         content
     }

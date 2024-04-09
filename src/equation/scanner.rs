@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug)]
 pub struct LatexScanner<'a> {
     source: &'a str,
@@ -34,14 +36,22 @@ impl<'a> Iterator for LatexScanner<'a> {
             let len = self
                 .source
                 .find(|c: char| !c.is_alphabetic())
-                .unwrap_or(self.source.len())
-                .max(1);
+                .unwrap_or(self.source.len());
             let keyword = &self.source[..len];
             self.source = &self.source[len..];
             Some(Token::Keyword(keyword))
         } else {
             self.source = &self.source[next.len_utf8()..];
             Some(Token::Char(next))
+        }
+    }
+}
+
+impl fmt::Display for Token<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::Keyword(keyword) => write!(f, "\\{keyword}"),
+            Token::Char(c) => write!(f, "{c}"),
         }
     }
 }
