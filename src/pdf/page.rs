@@ -2,7 +2,9 @@ use std::fmt::{self, Write};
 
 use glam::Vec2;
 
-use crate::{document::Style, text_layout::Line};
+use crate::{char_map::CharMap, document::Style, text_layout::Line};
+
+use super::cmap::MappedStr;
 
 // A4 page size
 pub const PAGE_WIDTH: f32 = 8.27 * 72.0;
@@ -41,7 +43,7 @@ impl PageBuilder {
         writeln!(self.content, "{} {} Td", delta.x, delta.y)
     }
 
-    pub fn text(&mut self, lines: &[Line]) -> Result<(), fmt::Error> {
+    pub fn text(&mut self, lines: &[Line], char_map: &CharMap) -> Result<(), fmt::Error> {
         self.begin_text()?;
 
         let mut current_style = Style::default();
@@ -67,12 +69,15 @@ impl PageBuilder {
                     write!(self.content, "[")?;
                 }
 
-                write!(
-                    self.content,
-                    "{}({})",
-                    (1000.0 * chunk.left_adjust / chunk.style.font_size) as i32,
-                    chunk.text,
-                )?;
+                if chunk.left_adjust != 0.0 {
+                    write!(
+                        self.content,
+                        "{}",
+                        (1000.0 * chunk.left_adjust / chunk.style.font_size) as i32,
+                    )?;
+                }
+
+                write!(self.content, "{}", MappedStr(&chunk.text, char_map))?;
             }
             writeln!(self.content, "] TJ")?;
         }

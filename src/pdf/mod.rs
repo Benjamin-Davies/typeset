@@ -3,10 +3,11 @@ use std::{
     fmt::{self, Write},
 };
 
-use crate::font::Font;
+use crate::{char_map::CharMap, font::Font};
 
 use self::page::{PAGE_HEIGHT, PAGE_WIDTH};
 
+mod cmap;
 pub mod page;
 
 const HEADER: &str = "%PDF-1.7\n";
@@ -97,7 +98,7 @@ impl PDFBuilder {
         Ok(ref_)
     }
 
-    fn font(&mut self, font: &Font) -> Result<Ref, fmt::Error> {
+    fn font(&mut self, font: &Font, char_map: &CharMap, cmap_ref: Ref) -> Result<Ref, fmt::Error> {
         let len = font.data.len();
         let encoded = ascii85_encode(font.data);
         let encoded_len = encoded.len();
@@ -147,7 +148,10 @@ impl PDFBuilder {
 
         let widths_ref = self.start_object()?;
         write!(self.content, "[ ")?;
-        for width in &font.widths {
+        for &c in &char_map.mappings {
+            let glyph_id = font.face.glyph_index(c).unwrap_or_default();
+            let width = font.face.glyph_hor_advance(glyph_id).unwrap_or_default();
+            let width = font.to_milli_em(width as i16);
             write!(self.content, "{width} ")?;
         }
         write!(self.content, "]")?;
@@ -156,13 +160,14 @@ impl PDFBuilder {
         let font_ref = self.start_object()?;
         write!(
             self.content,
-            "<< /Type /Font /Subtype /TrueType /FirstChar {first_char} /LastChar {last_char} ",
-            first_char = *font.char_range.start() as u32,
-            last_char = *font.char_range.end() as u32,
+            "<< /Type /Font /Subtype /TrueType /BaseFont /{ps_name} /FirstChar {first_char} /LastChar {last_char} ",
+            ps_name = font.ps_name,
+            first_char = 0,
+            last_char = char_map.mappings.len() - 1,
         )?;
         write!(
             self.content,
-            "/Widths {widths_ref} /FontDescriptor {font_descriptor} >>",
+            "/Widths {widths_ref} /FontDescriptor {font_descriptor} /ToUnicode {cmap_ref} >>",
         )?;
         self.end_object()?;
 
@@ -185,11 +190,16 @@ impl PDFBuilder {
         Ok(())
     }
 
-    pub fn catalog(&mut self, fonts: &BTreeMap<&str, &Font>) -> Result<(), fmt::Error> {
+    pub fn catalog(
+        &mut self,
+        fonts: &BTreeMap<&str, &Font>,
+        char_map: &CharMap,
+    ) -> Result<(), fmt::Error> {
+        let cmap_ref = self.cmap(fonts.first_key_value().unwrap().1, char_map)?;
         let font_refs = fonts
             .iter()
             .map(|(ps_name, font)| {
-                let ref_ = self.font(font)?;
+                let ref_ = self.font(font, char_map, cmap_ref)?;
                 Ok((ps_name, ref_))
             })
             .collect::<Result<Vec<_>, _>>()?;

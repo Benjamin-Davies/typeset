@@ -1,3 +1,4 @@
+pub mod char_map;
 pub mod document;
 pub mod equation;
 pub mod font;

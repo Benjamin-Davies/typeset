@@ -1,4 +1,4 @@
-use std::ops::{Mul, RangeInclusive};
+use std::ops::Mul;
 
 use thiserror::Error;
 use ttf_parser::{name_id, Face};
@@ -7,8 +7,6 @@ pub struct Font<'a> {
     pub data: &'a [u8],
     pub face: Face<'a>,
     pub ps_name: String,
-    pub char_range: RangeInclusive<char>,
-    pub widths: Vec<u32>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -53,26 +51,10 @@ impl<'a> Font<'a> {
             .to_string()
             .ok_or(Error::NonUnicodeString)?;
 
-        // TODO: Support non-ASCII characters.
-        let char_range = '\x00'..='\x7F';
-        let units_per_em = face.units_per_em() as u32;
-        let widths = char_range
-            .clone()
-            .map(|c| {
-                let glyph_id = face.glyph_index(c)?;
-                let width = face.glyph_hor_advance(glyph_id)?;
-                // Convert from font units to thousandths of an em.
-                Some(1000 * width as u32 / units_per_em)
-            })
-            .map(|w| w.unwrap_or(0))
-            .collect::<Vec<_>>();
-
         Ok(Self {
             data,
             face,
             ps_name,
-            char_range,
-            widths,
         })
     }
 
@@ -148,13 +130,6 @@ mod tests {
         let font = Font::default();
 
         assert_eq!(font.ps_name, "NotoSerif");
-
-        assert_eq!(font.char_range, '\x00'..='\x7F');
-        assert_eq!(font.widths.len(), 128);
-        assert_eq!(font.widths[b'M' as usize], 937);
-        assert_eq!(font.widths[b'N' as usize], 763);
-        assert_eq!(font.widths[b'm' as usize], 944);
-        assert_eq!(font.widths[b'n' as usize], 645);
 
         let metrics = font.metrics();
         assert_eq!(metrics.ascent, 1.0688477);

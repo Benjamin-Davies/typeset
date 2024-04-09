@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fs};
 
 use glam::vec2;
 use typeset::{
+    char_map::CharMap,
     document::{Block, Document, Inline, Style, TextAlign, TextBlock},
     font::Font,
     pdf::{
@@ -93,17 +94,69 @@ fn test_example() {
     let pages = layout_document(&document).unwrap();
 
     let mut pdf_builder = PDFBuilder::new();
+    let char_map = CharMap::from_document(&document);
     for page in pages {
         let mut builder = PageBuilder::new();
-        builder.text(&page.lines).unwrap();
+        builder.text(&page.lines, &char_map).unwrap();
         let page = builder.build();
         pdf_builder.page(&page).unwrap();
     }
-    pdf_builder.catalog(&document.fonts).unwrap();
+    pdf_builder.catalog(&document.fonts, &char_map).unwrap();
     let content = pdf_builder.build().unwrap();
 
     fs::create_dir_all("output").unwrap();
     fs::write("output/lorem_ipsum.pdf", &content).unwrap();
 
     assert_eq!(content, include_str!("../examples/lorem_ipsum.pdf"));
+}
+
+#[test]
+fn test_greek() {
+    let font = Font::default();
+    let text = "Εν αρχη ην ο λογος, και ο λογος ην προς τον θεον, και θεος ην ο λογος.";
+    let text2 = "Ἐν ἀρχῇ ἦν ὁ λόγος, καὶ ὁ λόγος ἦν πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος.";
+
+    let style = Style {
+        font: &font.ps_name,
+        font_size: 12.0,
+    };
+    let blocks = vec![
+        Block::Text(TextBlock {
+            inlines: vec![Inline { style, text }],
+            align: TextAlign::Left,
+        }),
+        Block::Text(TextBlock {
+            inlines: vec![Inline { style, text: text2 }],
+            align: TextAlign::Left,
+        }),
+    ];
+
+    let mut fonts = BTreeMap::new();
+    fonts.insert(&*font.ps_name, &font);
+
+    let document = Document {
+        blocks,
+        fonts,
+        page_size: vec2(PAGE_WIDTH, PAGE_HEIGHT),
+        margin: 72.0,
+    };
+
+    let pages = layout_document(&document).unwrap();
+
+    let mut pdf_builder = PDFBuilder::new();
+    let char_map = CharMap::from_document(&document);
+    for page in pages {
+        let mut builder = PageBuilder::new();
+        builder.text(&page.lines, &char_map).unwrap();
+        let page = builder.build();
+        pdf_builder.page(&page).unwrap();
+    }
+    pdf_builder.catalog(&document.fonts, &char_map).unwrap();
+    let content = pdf_builder.build().unwrap();
+
+    fs::create_dir_all("output").unwrap();
+    fs::write("output/greek.pdf", &content).unwrap();
+
+    todo!();
+    // assert_eq!(content, include_str!("../examples/greek.pdf"));
 }
