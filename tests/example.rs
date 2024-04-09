@@ -94,14 +94,16 @@ fn test_example() {
 
     let mut pdf_builder = PDFBuilder::new();
     for page in pages {
-        let page = PageBuilder::new().text(&page.lines).build();
-        pdf_builder.page(&page);
+        let mut builder = PageBuilder::new();
+        builder.text(&page.lines).unwrap();
+        let page = builder.build();
+        pdf_builder.page(&page).unwrap();
     }
-    pdf_builder.catalog(&document.fonts);
-    let content = pdf_builder.build();
+    pdf_builder.catalog(&document.fonts).unwrap();
+    let content = pdf_builder.build().unwrap();
 
     fs::create_dir_all("output").unwrap();
     fs::write("output/lorem_ipsum.pdf", &content).unwrap();
 
-    assert_eq!(content, include_bytes!("../examples/lorem_ipsum.pdf"));
+    assert_eq!(content, include_str!("../examples/lorem_ipsum.pdf"));
 }

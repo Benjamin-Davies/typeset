@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::fmt::{self, Write};
 
 use glam::Vec2;
 
@@ -9,7 +9,7 @@ pub const PAGE_WIDTH: f32 = 8.27 * 72.0;
 pub const PAGE_HEIGHT: f32 = 11.69 * 72.0;
 
 pub struct PageBuilder {
-    content: Vec<u8>,
+    content: String,
 }
 
 impl Default for PageBuilder {
@@ -21,33 +21,33 @@ impl Default for PageBuilder {
 impl PageBuilder {
     pub fn new() -> Self {
         Self {
-            content: Vec::new(),
+            content: String::new(),
         }
     }
 
-    fn begin_text(&mut self) {
-        writeln!(self.content, "BT").unwrap();
+    fn begin_text(&mut self) -> Result<(), fmt::Error> {
+        writeln!(self.content, "BT")
     }
 
-    fn end_text(&mut self) {
-        writeln!(self.content, "ET").unwrap();
+    fn end_text(&mut self) -> Result<(), fmt::Error> {
+        writeln!(self.content, "ET")
     }
 
-    fn style(&mut self, style: &Style) {
-        writeln!(self.content, "/{} {} Tf", style.font, style.font_size).unwrap();
+    fn style(&mut self, style: &Style) -> Result<(), fmt::Error> {
+        writeln!(self.content, "/{} {} Tf", style.font, style.font_size)
     }
 
-    fn text_line_delta(&mut self, delta: Vec2) {
-        writeln!(self.content, "{} {} Td", delta.x, delta.y).unwrap();
+    fn text_line_delta(&mut self, delta: Vec2) -> Result<(), fmt::Error> {
+        writeln!(self.content, "{} {} Td", delta.x, delta.y)
     }
 
-    pub fn text(mut self, lines: &[Line]) -> Self {
-        self.begin_text();
+    pub fn text(&mut self, lines: &[Line]) -> Result<(), fmt::Error> {
+        self.begin_text()?;
 
         let mut current_style = Style::default();
 
         for line in lines {
-            self.text_line_delta(line.delta);
+            self.text_line_delta(line.delta)?;
 
             let Some(first_chunk) = line.chunks.first() else {
                 continue;
@@ -55,16 +55,16 @@ impl PageBuilder {
 
             if first_chunk.style != current_style {
                 current_style = first_chunk.style;
-                self.style(&current_style);
+                self.style(&current_style)?;
             }
 
-            write!(self.content, "[").unwrap();
+            write!(self.content, "[")?;
             for chunk in &line.chunks {
                 if chunk.style != current_style {
-                    writeln!(self.content, "] TJ").unwrap();
+                    writeln!(self.content, "] TJ")?;
                     current_style = chunk.style;
-                    self.style(&current_style);
-                    write!(self.content, "[").unwrap();
+                    self.style(&current_style)?;
+                    write!(self.content, "[")?;
                 }
 
                 write!(
@@ -72,17 +72,16 @@ impl PageBuilder {
                     "{}({})",
                     (1000.0 * chunk.left_adjust / chunk.style.font_size) as i32,
                     chunk.text,
-                )
-                .unwrap();
+                )?;
             }
-            writeln!(self.content, "] TJ").unwrap();
+            writeln!(self.content, "] TJ")?;
         }
-        self.end_text();
+        self.end_text()?;
 
-        self
+        Ok(())
     }
 
-    pub fn build(self) -> Vec<u8> {
+    pub fn build(self) -> String {
         self.content
     }
 }
