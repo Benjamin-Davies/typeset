@@ -9,7 +9,7 @@ use typeset::{
 };
 
 #[test]
-fn test_example() {
+fn test_lorem_ipsum() {
     let font = Font::default();
     let bold_font = Font::new(include_bytes!(concat!(
         env!("OUT_DIR"),
@@ -98,7 +98,9 @@ fn test_example() {
 #[test]
 fn test_greek() {
     let font = Font::default();
+    // John 1:1 (THGNT) without diacritics
     let text = "Εν αρχη ην ο λογος, και ο λογος ην προς τον θεον, και θεος ην ο λογος.";
+    // John 1:1 (THGNT)
     let text2 = "Ἐν ἀρχῇ ἦν ὁ λόγος, καὶ ὁ λόγος ἦν πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος.";
 
     let style = Style {
