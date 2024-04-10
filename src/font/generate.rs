@@ -1,4 +1,6 @@
-use ttf_parser::{Face, RawFace, TableRecord};
+use ttf_parser::{
+    head::IndexToLocationFormat, Face, GlyphId, LazyArray16, RawFace, TableRecord, Tag,
+};
 
 use crate::char_map::CharMap;
 
@@ -9,15 +11,35 @@ const TABLE_RECORD_LEN: usize = 16;
 
 impl Font<'_> {
     pub fn with_cmap(&self, char_map: &CharMap) -> Vec<u8> {
+        assert!(self.face.is_subsetting_allowed());
+        assert_eq!(
+            self.face.tables().head.index_to_location_format,
+            IndexToLocationFormat::Long
+        );
+
         let raw_face = *self.face.raw_face();
+        let loca_data = raw_face.table(Tag::from_bytes(b"loca")).unwrap();
+        let loca = LazyArray16::<u32>::new(&loca_data);
+        let mut new_loca = vec![u32::MAX; loca.len() as usize];
 
         let mut contents = Vec::new();
         copy_header(&mut contents, raw_face);
         for (i, mut table_record) in raw_face.table_records.into_iter().enumerate() {
+            let table_data = raw_face.table(table_record.tag).unwrap();
+
             pad_to_multiple_of(&mut contents, 4);
 
             let (offset, len) = match &table_record.tag.to_bytes() {
                 b"cmap" => write_cmap(&mut contents, char_map, &self.face),
+                b"glyf" => write_glyf(
+                    &mut contents,
+                    char_map,
+                    &self.face,
+                    loca,
+                    table_data,
+                    &mut new_loca,
+                ),
+                b"loca" => write_loca(&mut contents, &new_loca),
                 _ => copy_table(&mut contents, &raw_face.data, table_record),
             };
 
@@ -92,6 +114,58 @@ fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u
 
     let cmap_len = contents.len() as u32 - cmap_offset;
     (cmap_offset, cmap_len)
+}
+
+fn write_glyf(
+    contents: &mut Vec<u8>,
+    char_map: &CharMap,
+    face: &Face,
+    loca: LazyArray16<u32>,
+    table_data: &[u8],
+    new_loca: &mut [u32],
+) -> (u32, u32) {
+    let glyf_offset = contents.len() as u32;
+    let mut glyf_len = 0u32;
+
+    for &c in &char_map.mappings {
+        let glyph_id = if c == '\0' {
+            GlyphId(0)
+        } else {
+            face.glyph_index(c).unwrap_or_default()
+        };
+        let offset = loca.get(glyph_id.0).unwrap_or_default();
+        let next_offset = loca.get(glyph_id.0 + 1).unwrap_or_default();
+        let len = next_offset - offset;
+        if len == 0 {
+            continue;
+        }
+
+        let new_locus = glyf_len;
+        contents.extend_from_slice(&table_data[offset as usize..next_offset as usize]);
+        glyf_len += len;
+
+        new_loca[glyph_id.0 as usize] = new_locus;
+    }
+
+    for locus in new_loca {
+        if *locus == u32::MAX {
+            *locus = glyf_len;
+        }
+    }
+
+    (glyf_offset, glyf_len)
+}
+
+fn write_loca(contents: &mut Vec<u8>, new_loca: &[u32]) -> (u32, u32) {
+    let loca_offset = contents.len() as u32;
+    let loca_len = new_loca.len() as u32 * 4;
+
+    // The loca table is always written after the glyf table.
+    for &offset in new_loca {
+        contents.push_u32(offset);
+    }
+
+    (loca_offset, loca_len)
 }
 
 fn copy_header(contents: &mut Vec<u8>, raw_face: RawFace) {
