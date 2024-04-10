@@ -117,8 +117,7 @@ fn test_example() {
     fs::create_dir_all("output").unwrap();
     fs::write("output/lorem_ipsum.pdf", &content).unwrap();
 
-    todo!();
-    // assert_eq!(content, include_str!("../examples/lorem_ipsum.pdf"));
+    assert_eq!(content, include_str!("../examples/lorem_ipsum.pdf"));
 }
 
 #[test]
@@ -178,6 +177,5 @@ fn test_greek() {
     fs::create_dir_all("output").unwrap();
     fs::write("output/greek.pdf", &content).unwrap();
 
-    todo!();
-    // assert_eq!(content, include_str!("../examples/greek.pdf"));
+    assert_eq!(content, include_str!("../examples/greek.pdf"));
 }
