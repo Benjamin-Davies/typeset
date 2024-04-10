@@ -1,6 +1,6 @@
 use std::fmt::{self, Write};
 
-use crate::{char_map::CharMap, font::Font};
+use crate::char_map::CharMap;
 
 use super::{PDFBuilder, Ref};
 
@@ -25,15 +25,15 @@ impl fmt::Display for MappedStr<'_> {
 }
 
 impl PDFBuilder {
-    pub(super) fn cmap(&mut self, font: &Font, char_map: &CharMap) -> Result<Ref, fmt::Error> {
+    pub(super) fn cmap(&mut self, char_map: &CharMap) -> Result<Ref, fmt::Error> {
         let mut cmap = String::new();
-        write_cmap(&mut cmap, font, char_map)?;
+        write_cmap(&mut cmap, char_map)?;
 
         self.stream_object(&cmap)
     }
 }
 
-fn write_cmap(s: &mut String, font: &Font, char_map: &CharMap) -> Result<(), fmt::Error> {
+fn write_cmap(s: &mut String, char_map: &CharMap) -> Result<(), fmt::Error> {
     // Copied from LibreOffice output
     writeln!(s, "/CIDInit /ProcSet findresource begin")?;
     writeln!(s, "12 dict begin")?;
@@ -51,7 +51,6 @@ fn write_cmap(s: &mut String, font: &Font, char_map: &CharMap) -> Result<(), fmt
 
     writeln!(s, "{} beginbfchar", char_map.mappings.len())?;
     for (i, &c) in char_map.mappings.iter().enumerate() {
-        let glyph_id = font.face.glyph_index(c).unwrap_or_default();
         writeln!(s, "<{:02x}> <{:04x}>", i, c as u32)?;
     }
     writeln!(s, "endbfchar")?;

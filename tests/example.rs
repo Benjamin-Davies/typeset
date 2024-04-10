@@ -93,21 +93,32 @@ fn test_example() {
 
     let pages = layout_document(&document).unwrap();
 
-    let mut pdf_builder = PDFBuilder::new();
     let char_map = CharMap::from_document(&document);
+    let new_font_buffers = document
+        .fonts
+        .iter()
+        .map(|(&name, font)| (name, font.with_cmap(&char_map)))
+        .collect::<BTreeMap<&str, Vec<u8>>>();
+    let new_fonts = new_font_buffers
+        .iter()
+        .map(|(&name, buffer)| (name, Font::new(buffer).unwrap()))
+        .collect::<BTreeMap<&str, Font>>();
+
+    let mut pdf_builder = PDFBuilder::new();
     for page in pages {
         let mut builder = PageBuilder::new();
         builder.text(&page.lines, &char_map).unwrap();
         let page = builder.build();
         pdf_builder.page(&page).unwrap();
     }
-    pdf_builder.catalog(&document.fonts, &char_map).unwrap();
+    pdf_builder.catalog(&new_fonts, &char_map).unwrap();
     let content = pdf_builder.build().unwrap();
 
     fs::create_dir_all("output").unwrap();
     fs::write("output/lorem_ipsum.pdf", &content).unwrap();
 
-    assert_eq!(content, include_str!("../examples/lorem_ipsum.pdf"));
+    todo!();
+    // assert_eq!(content, include_str!("../examples/lorem_ipsum.pdf"));
 }
 
 #[test]
@@ -143,15 +154,25 @@ fn test_greek() {
 
     let pages = layout_document(&document).unwrap();
 
-    let mut pdf_builder = PDFBuilder::new();
     let char_map = CharMap::from_document(&document);
+    let new_font_buffers = document
+        .fonts
+        .iter()
+        .map(|(&name, font)| (name, font.with_cmap(&char_map)))
+        .collect::<BTreeMap<&str, Vec<u8>>>();
+    let new_fonts = new_font_buffers
+        .iter()
+        .map(|(&name, buffer)| (name, Font::new(buffer).unwrap()))
+        .collect::<BTreeMap<&str, Font>>();
+
+    let mut pdf_builder = PDFBuilder::new();
     for page in pages {
         let mut builder = PageBuilder::new();
         builder.text(&page.lines, &char_map).unwrap();
         let page = builder.build();
         pdf_builder.page(&page).unwrap();
     }
-    pdf_builder.catalog(&document.fonts, &char_map).unwrap();
+    pdf_builder.catalog(&new_fonts, &char_map).unwrap();
     let content = pdf_builder.build().unwrap();
 
     fs::create_dir_all("output").unwrap();

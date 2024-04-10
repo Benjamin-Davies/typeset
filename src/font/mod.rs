@@ -3,6 +3,8 @@ use std::ops::Mul;
 use thiserror::Error;
 use ttf_parser::{name_id, Face};
 
+mod generate;
+
 pub struct Font<'a> {
     pub data: &'a [u8],
     pub face: Face<'a>,

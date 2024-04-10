@@ -192,10 +192,10 @@ impl PDFBuilder {
 
     pub fn catalog(
         &mut self,
-        fonts: &BTreeMap<&str, &Font>,
+        fonts: &BTreeMap<&str, Font>,
         char_map: &CharMap,
     ) -> Result<(), fmt::Error> {
-        let cmap_ref = self.cmap(fonts.first_key_value().unwrap().1, char_map)?;
+        let cmap_ref = self.cmap(char_map)?;
         let font_refs = fonts
             .iter()
             .map(|(ps_name, font)| {
