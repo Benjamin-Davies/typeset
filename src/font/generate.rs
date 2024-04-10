@@ -21,7 +21,7 @@ impl Font<'_> {
                 _ => copy_table(&mut contents, &raw_face.data, table_record),
             };
 
-            // TODO: do we need to update the checksum?
+            // Most modern rasterizers ignore the checksums, so we don't bother updating them.
             table_record.offset = offset;
             table_record.length = len;
             write_table_record(&mut contents, i, table_record);
@@ -52,13 +52,9 @@ fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u
     let seg_count = char_map.mappings.len() as u16 + 1; // Add one at the end for the last end code
     let seg_count_log_2 = 15 - seg_count.leading_zeros();
     contents.push_u16(2 * seg_count); // segment count * 2
-
-    // contents.push_u16(2 << seg_count_log_2); // search range
-    // contents.push_u16(seg_count_log_2 as u16); // entry selector
-    // contents.push_u16(2 * seg_count - 2 << seg_count_log_2); // range shift
-    contents.push_u16(0);
-    contents.push_u16(0);
-    contents.push_u16(0);
+    contents.push_u16(2 << seg_count_log_2); // search range
+    contents.push_u16(seg_count_log_2 as u16); // entry selector
+    contents.push_u16(2 * seg_count - 2 << seg_count_log_2); // range shift
 
     // end code
     for (i, _c) in char_map.mappings.iter().enumerate() {
@@ -73,7 +69,7 @@ fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u
     for (i, _c) in char_map.mappings.iter().enumerate() {
         contents.push_u16(i as u16);
     }
-    contents.push_u16(char_map.mappings.len() as u16); // last start code
+    contents.push_u16(u16::MAX); // last start code
 
     // ID delta
     for (i, &c) in char_map.mappings.iter().enumerate() {

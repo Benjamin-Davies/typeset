@@ -148,8 +148,9 @@ impl PDFBuilder {
 
         let widths_ref = self.start_object()?;
         write!(self.content, "[ ")?;
-        for &c in &char_map.mappings {
-            let glyph_id = font.face.glyph_index(c).unwrap_or_default();
+        for (i, _c) in char_map.mappings.iter().enumerate() {
+            // The new font uses the mapping index as the CID
+            let glyph_id = font.face.glyph_index(i as u8 as char).unwrap_or_default();
             let width = font.face.glyph_hor_advance(glyph_id).unwrap_or_default();
             let width = font.to_milli_em(width as i16);
             write!(self.content, "{width} ")?;
