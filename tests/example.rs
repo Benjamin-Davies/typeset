@@ -2,14 +2,10 @@ use std::{collections::BTreeMap, fs};
 
 use glam::vec2;
 use typeset::{
-    char_map::CharMap,
     document::{Block, Document, Inline, Style, TextAlign, TextBlock},
     font::Font,
-    pdf::{
-        page::{PageBuilder, PAGE_HEIGHT, PAGE_WIDTH},
-        PDFBuilder,
-    },
-    text_layout::layout_document,
+    generate_pdf,
+    pdf::page::{PAGE_HEIGHT, PAGE_WIDTH},
 };
 
 #[test]
@@ -91,28 +87,7 @@ fn test_example() {
         margin: 72.0,
     };
 
-    let pages = layout_document(&document).unwrap();
-
-    let char_map = CharMap::from_document(&document);
-    let new_font_buffers = document
-        .fonts
-        .iter()
-        .map(|(&name, font)| (name, font.with_cmap(&char_map)))
-        .collect::<BTreeMap<&str, Vec<u8>>>();
-    let new_fonts = new_font_buffers
-        .iter()
-        .map(|(&name, buffer)| (name, Font::new(buffer).unwrap()))
-        .collect::<BTreeMap<&str, Font>>();
-
-    let mut pdf_builder = PDFBuilder::new();
-    for page in pages {
-        let mut builder = PageBuilder::new();
-        builder.text(&page.lines, &char_map).unwrap();
-        let page = builder.build();
-        pdf_builder.page(&page).unwrap();
-    }
-    pdf_builder.catalog(&new_fonts, &char_map).unwrap();
-    let content = pdf_builder.build().unwrap();
+    let content = generate_pdf(document);
 
     fs::create_dir_all("output").unwrap();
     fs::write("output/lorem_ipsum.pdf", &content).unwrap();
@@ -151,28 +126,7 @@ fn test_greek() {
         margin: 72.0,
     };
 
-    let pages = layout_document(&document).unwrap();
-
-    let char_map = CharMap::from_document(&document);
-    let new_font_buffers = document
-        .fonts
-        .iter()
-        .map(|(&name, font)| (name, font.with_cmap(&char_map)))
-        .collect::<BTreeMap<&str, Vec<u8>>>();
-    let new_fonts = new_font_buffers
-        .iter()
-        .map(|(&name, buffer)| (name, Font::new(buffer).unwrap()))
-        .collect::<BTreeMap<&str, Font>>();
-
-    let mut pdf_builder = PDFBuilder::new();
-    for page in pages {
-        let mut builder = PageBuilder::new();
-        builder.text(&page.lines, &char_map).unwrap();
-        let page = builder.build();
-        pdf_builder.page(&page).unwrap();
-    }
-    pdf_builder.catalog(&new_fonts, &char_map).unwrap();
-    let content = pdf_builder.build().unwrap();
+    let content = generate_pdf(document);
 
     fs::create_dir_all("output").unwrap();
     fs::write("output/greek.pdf", &content).unwrap();
