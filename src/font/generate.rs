@@ -1,8 +1,20 @@
-use ttf_parser::{head::IndexToLocationFormat, GlyphId, LazyArray16, RawFace, TableRecord, Tag};
+use std::collections::BTreeMap;
+
+use ttf_parser::{head::IndexToLocationFormat, Face, GlyphId, LazyArray16, RawFace, Tag};
 
 use crate::char_map::CharMap;
 
 use super::Font;
+
+const CMAP: Tag = Tag::from_bytes(b"cmap");
+const GLYF: Tag = Tag::from_bytes(b"glyf");
+const HEAD: Tag = Tag::from_bytes(b"head");
+const HHEA: Tag = Tag::from_bytes(b"hhea");
+const HMTX: Tag = Tag::from_bytes(b"hmtx");
+const LOCA: Tag = Tag::from_bytes(b"loca");
+const MAXP: Tag = Tag::from_bytes(b"maxp");
+const NAME: Tag = Tag::from_bytes(b"name");
+const POST: Tag = Tag::from_bytes(b"post");
 
 const FIXED_HEADER_LEN: usize = 12;
 const TABLE_RECORD_LEN: usize = 16;
@@ -10,8 +22,8 @@ const TABLE_RECORD_LEN: usize = 16;
 impl Font<'_> {
     fn glyph_data(&self, glyph_id: GlyphId) -> &[u8] {
         let raw_face = *self.face.raw_face();
-        let loca_data = raw_face.table(Tag::from_bytes(b"loca")).unwrap_or_default();
-        let glyf_data = raw_face.table(Tag::from_bytes(b"glyf")).unwrap_or_default();
+        let loca_data = raw_face.table(LOCA).unwrap_or_default();
+        let glyf_data = raw_face.table(GLYF).unwrap_or_default();
 
         let loca = LazyArray16::<u32>::new(&loca_data);
         let offset = loca.get(glyph_id.0).unwrap_or_default() as usize;
@@ -28,9 +40,6 @@ impl Font<'_> {
         );
 
         let raw_face = *self.face.raw_face();
-        let loca_data = raw_face.table(Tag::from_bytes(b"loca")).unwrap();
-        let loca = LazyArray16::<u32>::new(&loca_data);
-        let mut new_loca = vec![u32::MAX; loca.len() as usize];
 
         // Map from new glyph ID (index) to old glyph ID (value)
         let mut glyph_map = char_map
@@ -38,81 +47,112 @@ impl Font<'_> {
             .iter()
             .map(|&c| self.face.glyph_index(c).unwrap_or_default())
             .collect::<Vec<_>>();
+        glyph_map[0] = GlyphId(0); // The first glyph must be the missing glyph
+        collect_glyph_dependencies(self, &mut glyph_map);
 
-        // BFS to check we have all glyph dependencies
-        let mut i = 0;
-        while i < glyph_map.len() {
-            let glyph_id = glyph_map[i];
-            let glyph_data = self.glyph_data(glyph_id);
-            if glyph_data.is_empty() {
-                i += 1;
-                continue;
-            }
+        // Use a BTreeMap to keep the tables sorted by tag
+        let mut tables = BTreeMap::new();
+        tables.insert(CMAP, generate_cmap());
+        let mut loca = Vec::new();
+        tables.insert(GLYF, generate_glyf(self, &glyph_map, &mut loca));
+        tables.insert(LOCA, generate_loca(&loca));
+        tables.insert(HMTX, generate_hmtx(&self.face, &glyph_map));
+        tables.insert(HHEA, generate_hhea(&raw_face, glyph_map.len()));
 
-            let num_contours = i16::from_be_bytes([glyph_data[0], glyph_data[1]]);
-            if num_contours == -1 {
-                // Compound glyph
-                let mut j = 10;
-                while j < glyph_data.len() {
-                    let flags = u16::from_be_bytes([glyph_data[j], glyph_data[j + 1]]);
-                    let component_glyph_id =
-                        GlyphId(u16::from_be_bytes([glyph_data[j + 2], glyph_data[j + 3]]));
-
-                    if !glyph_map.contains(&component_glyph_id) {
-                        glyph_map.push(component_glyph_id);
-                    }
-
-                    // The size of the glyph table depends on the flags
-                    j += 4;
-                    if flags & 0x0001 != 0 {
-                        j += 4;
-                    } else {
-                        j += 2;
-                    }
-                    if flags & 0x0008 != 0 {
-                        j += 2;
-                    } else if flags & 0x0040 != 0 {
-                        j += 4;
-                    } else if flags & 0x0080 != 0 {
-                        j += 8;
-                    }
-
-                    // More components flag == 0
-                    if flags & 0x0020 == 0 {
-                        break;
-                    }
-                }
-            }
-
-            i += 1;
+        // Copy the rest of the required tables verbatim
+        for tag in [HEAD, MAXP, NAME, POST] {
+            tables.insert(tag, raw_face.table(tag).unwrap_or_default().to_owned());
         }
 
         let mut contents = Vec::new();
-        copy_header(&mut contents, raw_face);
-        for (i, mut table_record) in raw_face.table_records.into_iter().enumerate() {
-            let table_data = raw_face.table(table_record.tag).unwrap();
 
-            pad_to_multiple_of(&mut contents, 4);
+        // table directory
+        contents.push_u32(0x00010000); // version
+        contents.push_u16(tables.len() as u16); // num tables
+        contents.extend_from_slice(&[0; 6]); // search range, entry selector, range shift (ignored)
+        for &tag in tables.keys() {
+            // table records
+            contents.push_u32(tag.0); // tag
+            contents.push_u32(0); // check sum (ignored)
+            contents.push_u32(0); // offset (backfilled later)
+            contents.push_u32(0); // length (backfilled later)
+        }
 
-            let (offset, len) = match &table_record.tag.to_bytes() {
-                b"cmap" => write_cmap(&mut contents, &glyph_map),
-                b"glyf" => write_glyf(&mut contents, &glyph_map, loca, table_data, &mut new_loca),
-                b"loca" => write_loca(&mut contents, &new_loca),
-                _ => copy_table(&mut contents, &raw_face.data, table_record),
-            };
+        // tables
+        for (i, table) in tables.values().enumerate() {
+            pad_to_multiple_of(&mut contents, 8);
 
-            // Most modern rasterizers ignore the checksums, so we don't bother updating them.
-            table_record.offset = offset;
-            table_record.length = len;
-            write_table_record(&mut contents, i, table_record);
+            let offset = contents.len() as u32;
+            let len = table.len() as u32;
+            contents.extend_from_slice(table);
+
+            // backfill the offset and length
+            let table_record_offset = FIXED_HEADER_LEN + TABLE_RECORD_LEN * i;
+            contents[table_record_offset + 8..table_record_offset + 12]
+                .copy_from_slice(&offset.to_be_bytes());
+            contents[table_record_offset + 12..table_record_offset + 16]
+                .copy_from_slice(&len.to_be_bytes());
         }
 
         contents
     }
 }
 
-fn write_cmap(contents: &mut Vec<u8>, glyph_map: &[GlyphId]) -> (u32, u32) {
-    let cmap_offset = contents.len() as u32;
+/// BFS to collect all the dependencies for composite glyphs.
+fn collect_glyph_dependencies(font: &Font, glyph_map: &mut Vec<GlyphId>) {
+    let mut i = 0;
+    while i < glyph_map.len() {
+        let glyph_id = glyph_map[i];
+        let glyph_data = font.glyph_data(glyph_id);
+        if glyph_data.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        let num_contours = i16::from_be_bytes([glyph_data[0], glyph_data[1]]);
+        if num_contours == -1 {
+            let mut j = 10;
+            while j < glyph_data.len() {
+                let flags = u16::from_be_bytes([glyph_data[j], glyph_data[j + 1]]);
+                let component_glyph_id =
+                    GlyphId(u16::from_be_bytes([glyph_data[j + 2], glyph_data[j + 3]]));
+
+                if !glyph_map.contains(&component_glyph_id) {
+                    glyph_map.push(component_glyph_id);
+                }
+
+                j += component_glyph_table_len(flags);
+                // More components flag == 0
+                if flags & 0x0020 == 0 {
+                    break;
+                }
+            }
+        }
+
+        i += 1;
+    }
+}
+
+fn component_glyph_table_len(flags: u16) -> usize {
+    let mut len = 4;
+    if flags & 0x0001 != 0 {
+        len += 4;
+    } else {
+        len += 2;
+    }
+    if flags & 0x0008 != 0 {
+        len += 2;
+    } else if flags & 0x0040 != 0 {
+        len += 4;
+    } else if flags & 0x0080 != 0 {
+        len += 8;
+    }
+
+    len
+}
+
+fn generate_cmap() -> Vec<u8> {
+    let mut contents = Vec::new();
 
     // cmap Header
     contents.push_u16(0); // version
@@ -124,126 +164,111 @@ fn write_cmap(contents: &mut Vec<u8>, glyph_map: &[GlyphId]) -> (u32, u32) {
     contents.push_u32(12); // subtable offset
 
     // Subtable Header
-    let subtable_start_global_offset = contents.len();
     contents.push_u16(4); // format = 4 (Segment mapping to delta values)
-    let subtable_len_global_offset = contents.len();
-    contents.push_u16(0); // length (backfilled later)
+    contents.push_u16(24); // length
     contents.push_u16(0); // language (not used)
-    let seg_count = glyph_map.len() as u16 + 1; // Add one at the end for the last end code
-    let seg_count_log_2 = 15 - seg_count.leading_zeros();
-    contents.push_u16(2 * seg_count); // segment count * 2
-    contents.push_u16(2 << seg_count_log_2); // search range
-    contents.push_u16(seg_count_log_2 as u16); // entry selector
-    contents.push_u16(2 * seg_count - 2 << seg_count_log_2); // range shift
+    contents.push_u16(2); // segment count * 2
+    contents.push_u16(2); // search range
+    contents.push_u16(0); // entry selector
+    contents.push_u16(0); // range shift
+    contents.push_u16(u16::MAX); // end code
+    contents.push_u16(0); // reserved padding
+    contents.push_u16(0); // start code
+    contents.push_u16(0); // ID delta
+    contents.push_u16(0); // ID range offset
 
-    // end code
-    for (i, _glyph_id) in glyph_map.iter().enumerate() {
-        contents.push_u16(i as u16);
-    }
-    contents.push_u16(u16::MAX); // last end code
-
-    // reserved padding
-    contents.push_u16(0);
-
-    // start code
-    for (i, _glyph_id) in glyph_map.iter().enumerate() {
-        contents.push_u16(i as u16);
-    }
-    contents.push_u16(u16::MAX); // last start code
-
-    // ID delta
-    for (i, &glyph_id) in glyph_map.iter().enumerate() {
-        let delta = glyph_id.0 as i16 - i as i16;
-        contents.push_u16(delta as u16);
-    }
-    contents.push_u16(0); // last ID delta
-
-    // ID range offset
-    for _ in glyph_map {
-        contents.push_u16(0);
-    }
-    contents.push_u16(0); // last ID range offset
-
-    // backfill the length
-    let subtable_len = contents.len() as u32 - subtable_start_global_offset as u32;
-    contents[subtable_len_global_offset..subtable_len_global_offset + 4]
-        .copy_from_slice(&subtable_len.to_be_bytes());
-
-    let cmap_len = contents.len() as u32 - cmap_offset;
-    (cmap_offset, cmap_len)
+    contents
 }
 
-fn write_glyf(
-    contents: &mut Vec<u8>,
-    glyph_map: &[GlyphId],
-    loca: LazyArray16<u32>,
-    table_data: &[u8],
-    new_loca: &mut [u32],
-) -> (u32, u32) {
-    let glyf_offset = contents.len() as u32;
-    let mut glyf_len = 0u32;
+fn generate_glyf(font: &Font, glyph_map: &[GlyphId], loca: &mut Vec<u32>) -> Vec<u8> {
+    const GLYF_LEN_MARKER: u32 = u32::MAX;
+
+    let mut contents = Vec::new();
 
     for &glyph_id in glyph_map {
-        let offset = loca.get(glyph_id.0).unwrap_or_default();
-        let next_offset = loca.get(glyph_id.0 + 1).unwrap_or_default();
-        let len = next_offset - offset;
-        if len == 0 {
+        let glyph_data = font.glyph_data(glyph_id);
+        if glyph_data.is_empty() {
+            loca.push(GLYF_LEN_MARKER);
             continue;
         }
 
-        let new_locus = glyf_len;
-        contents.extend_from_slice(&table_data[offset as usize..next_offset as usize]);
-        glyf_len += len;
+        pad_to_multiple_of(&mut contents, 8);
 
-        new_loca[glyph_id.0 as usize] = new_locus;
+        let start = contents.len();
+        contents.extend_from_slice(glyph_data);
+
+        map_glyph_components(&mut contents[start..], glyph_map);
+
+        loca.push(start as u32);
     }
+    loca.push(GLYF_LEN_MARKER);
 
-    for locus in new_loca {
-        if *locus == u32::MAX {
+    let glyf_len = contents.len() as u32;
+    for locus in loca {
+        if *locus == GLYF_LEN_MARKER {
             *locus = glyf_len;
         }
     }
 
-    (glyf_offset, glyf_len)
+    contents
 }
 
-fn write_loca(contents: &mut Vec<u8>, new_loca: &[u32]) -> (u32, u32) {
-    let loca_offset = contents.len() as u32;
-    let loca_len = new_loca.len() as u32 * 4;
+/// Updates the component glyph references to the new glyph indices if this is a composite glyph.
+fn map_glyph_components(glyph_data: &mut [u8], glyph_map: &[GlyphId]) {
+    let num_contours = i16::from_be_bytes([glyph_data[0], glyph_data[1]]);
+    if num_contours == -1 {
+        let mut j = 10;
+        while j < glyph_data.len() {
+            let flags = u16::from_be_bytes([glyph_data[j], glyph_data[j + 1]]);
+            let component_glyph_id =
+                GlyphId(u16::from_be_bytes([glyph_data[j + 2], glyph_data[j + 3]]));
 
-    // The loca table is always written after the glyf table.
-    for &offset in new_loca {
+            let component_glyph_index = glyph_map
+                .iter()
+                .position(|&id| id == component_glyph_id)
+                .unwrap_or_default();
+            glyph_data[j + 2..j + 4].copy_from_slice(&(component_glyph_index as u16).to_be_bytes());
+
+            j += component_glyph_table_len(flags);
+            // More components flag == 0
+            if flags & 0x0020 == 0 {
+                break;
+            }
+        }
+    }
+}
+
+fn generate_loca(loca: &[u32]) -> Vec<u8> {
+    let mut contents = Vec::new();
+
+    for &offset in loca {
         contents.push_u32(offset);
     }
 
-    (loca_offset, loca_len)
+    contents
 }
 
-fn copy_header(contents: &mut Vec<u8>, raw_face: RawFace) {
-    // Copy the header from the original font
-    let len = FIXED_HEADER_LEN + TABLE_RECORD_LEN * raw_face.table_records.len() as usize;
-    contents.extend_from_slice(&raw_face.data[..len]);
+fn generate_hmtx(face: &Face, glyph_map: &[GlyphId]) -> Vec<u8> {
+    let mut contents = Vec::new();
+
+    for &glyph_id in glyph_map {
+        let advance_width = face.glyph_hor_advance(glyph_id).unwrap_or_default();
+        let left_side_bearing = face.glyph_hor_side_bearing(glyph_id).unwrap_or_default();
+
+        contents.push_u16(advance_width);
+        contents.push_u16(left_side_bearing as u16);
+    }
+
+    contents
 }
 
-fn copy_table(contents: &mut Vec<u8>, data: &[u8], table_record: TableRecord) -> (u32, u32) {
-    let offset = table_record.offset as usize;
-    let len = table_record.length as usize;
+fn generate_hhea(raw_face: &RawFace, num_glyphs: usize) -> Vec<u8> {
+    let mut contents = raw_face.table(HHEA).unwrap().to_owned();
 
-    let new_offset = contents.len() as u32;
-    contents.extend(&data[offset..offset + len]);
-    (new_offset, len as u32)
-}
+    // number of H-metrics
+    contents[34..36].copy_from_slice(&(num_glyphs as u16).to_be_bytes());
 
-fn write_table_record(
-    contents: &mut [u8], // We don't extend the contents here
-    index: usize,
-    table_record: TableRecord,
-) {
-    let offset = FIXED_HEADER_LEN + TABLE_RECORD_LEN * index;
-    contents[offset..offset + 4].copy_from_slice(&table_record.tag.0.to_be_bytes());
-    contents[offset + 4..offset + 8].copy_from_slice(&table_record.check_sum.to_be_bytes());
-    contents[offset + 8..offset + 12].copy_from_slice(&table_record.offset.to_be_bytes());
-    contents[offset + 12..offset + 16].copy_from_slice(&table_record.length.to_be_bytes());
+    contents
 }
 
 fn pad_to_multiple_of(contents: &mut Vec<u8>, alignment: usize) {
