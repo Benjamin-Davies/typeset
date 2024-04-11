@@ -22,7 +22,7 @@ pub fn generate_pdf(document: Document) -> String {
     let new_font_buffers = document
         .fonts
         .iter()
-        .map(|(&name, font)| (name, font.with_cmap(&char_map)))
+        .map(|(&name, font)| (name, font.subset(&char_map)))
         .collect::<BTreeMap<&str, Vec<u8>>>();
     let new_fonts = new_font_buffers
         .iter()

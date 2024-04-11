@@ -9,25 +9,18 @@ const TABLE_RECORD_LEN: usize = 16;
 
 impl Font<'_> {
     fn glyph_data(&self, glyph_id: GlyphId) -> &[u8] {
-        let loca_data = self
-            .face
-            .raw_face()
-            .table(Tag::from_bytes(b"loca"))
-            .unwrap_or_default();
-        let glyf_data = self
-            .face
-            .raw_face()
-            .table(Tag::from_bytes(b"glyf"))
-            .unwrap_or_default();
+        let raw_face = *self.face.raw_face();
+        let loca_data = raw_face.table(Tag::from_bytes(b"loca")).unwrap_or_default();
+        let glyf_data = raw_face.table(Tag::from_bytes(b"glyf")).unwrap_or_default();
 
         let loca = LazyArray16::<u32>::new(&loca_data);
         let offset = loca.get(glyph_id.0).unwrap_or_default() as usize;
-        let next_offset = loca.get(glyph_id.0 + 1).unwrap_or_default() as usize;
+        let next_offset = loca.get(glyph_id.0 + 1).unwrap_or(glyf_data.len() as u32) as usize;
 
         &glyf_data[offset..next_offset]
     }
 
-    pub fn with_cmap(&self, char_map: &CharMap) -> Vec<u8> {
+    pub fn subset(&self, char_map: &CharMap) -> Vec<u8> {
         assert!(self.face.is_subsetting_allowed());
         assert_eq!(
             self.face.tables().head.index_to_location_format,
