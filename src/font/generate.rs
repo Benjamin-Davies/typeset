@@ -1,6 +1,4 @@
-use ttf_parser::{
-    head::IndexToLocationFormat, Face, GlyphId, LazyArray16, RawFace, TableRecord, Tag,
-};
+use ttf_parser::{head::IndexToLocationFormat, GlyphId, LazyArray16, RawFace, TableRecord, Tag};
 
 use crate::char_map::CharMap;
 
@@ -10,6 +8,25 @@ const FIXED_HEADER_LEN: usize = 12;
 const TABLE_RECORD_LEN: usize = 16;
 
 impl Font<'_> {
+    fn glyph_data(&self, glyph_id: GlyphId) -> &[u8] {
+        let loca_data = self
+            .face
+            .raw_face()
+            .table(Tag::from_bytes(b"loca"))
+            .unwrap_or_default();
+        let glyf_data = self
+            .face
+            .raw_face()
+            .table(Tag::from_bytes(b"glyf"))
+            .unwrap_or_default();
+
+        let loca = LazyArray16::<u32>::new(&loca_data);
+        let offset = loca.get(glyph_id.0).unwrap_or_default() as usize;
+        let next_offset = loca.get(glyph_id.0 + 1).unwrap_or_default() as usize;
+
+        &glyf_data[offset..next_offset]
+    }
+
     pub fn with_cmap(&self, char_map: &CharMap) -> Vec<u8> {
         assert!(self.face.is_subsetting_allowed());
         assert_eq!(
@@ -22,6 +39,61 @@ impl Font<'_> {
         let loca = LazyArray16::<u32>::new(&loca_data);
         let mut new_loca = vec![u32::MAX; loca.len() as usize];
 
+        // Map from new glyph ID (index) to old glyph ID (value)
+        let mut glyph_map = char_map
+            .mappings
+            .iter()
+            .map(|&c| self.face.glyph_index(c).unwrap_or_default())
+            .collect::<Vec<_>>();
+
+        // BFS to check we have all glyph dependencies
+        let mut i = 0;
+        while i < glyph_map.len() {
+            let glyph_id = glyph_map[i];
+            let glyph_data = self.glyph_data(glyph_id);
+            if glyph_data.is_empty() {
+                i += 1;
+                continue;
+            }
+
+            let num_contours = i16::from_be_bytes([glyph_data[0], glyph_data[1]]);
+            if num_contours == -1 {
+                // Compound glyph
+                let mut j = 10;
+                while j < glyph_data.len() {
+                    let flags = u16::from_be_bytes([glyph_data[j], glyph_data[j + 1]]);
+                    let component_glyph_id =
+                        GlyphId(u16::from_be_bytes([glyph_data[j + 2], glyph_data[j + 3]]));
+
+                    if !glyph_map.contains(&component_glyph_id) {
+                        glyph_map.push(component_glyph_id);
+                    }
+
+                    // The size of the glyph table depends on the flags
+                    j += 4;
+                    if flags & 0x0001 != 0 {
+                        j += 4;
+                    } else {
+                        j += 2;
+                    }
+                    if flags & 0x0008 != 0 {
+                        j += 2;
+                    } else if flags & 0x0040 != 0 {
+                        j += 4;
+                    } else if flags & 0x0080 != 0 {
+                        j += 8;
+                    }
+
+                    // More components flag == 0
+                    if flags & 0x0020 == 0 {
+                        break;
+                    }
+                }
+            }
+
+            i += 1;
+        }
+
         let mut contents = Vec::new();
         copy_header(&mut contents, raw_face);
         for (i, mut table_record) in raw_face.table_records.into_iter().enumerate() {
@@ -30,15 +102,8 @@ impl Font<'_> {
             pad_to_multiple_of(&mut contents, 4);
 
             let (offset, len) = match &table_record.tag.to_bytes() {
-                b"cmap" => write_cmap(&mut contents, char_map, &self.face),
-                b"glyf" => write_glyf(
-                    &mut contents,
-                    char_map,
-                    &self.face,
-                    loca,
-                    table_data,
-                    &mut new_loca,
-                ),
+                b"cmap" => write_cmap(&mut contents, &glyph_map),
+                b"glyf" => write_glyf(&mut contents, &glyph_map, loca, table_data, &mut new_loca),
                 b"loca" => write_loca(&mut contents, &new_loca),
                 _ => copy_table(&mut contents, &raw_face.data, table_record),
             };
@@ -53,7 +118,7 @@ impl Font<'_> {
     }
 }
 
-fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u32, u32) {
+fn write_cmap(contents: &mut Vec<u8>, glyph_map: &[GlyphId]) -> (u32, u32) {
     let cmap_offset = contents.len() as u32;
 
     // cmap Header
@@ -71,7 +136,7 @@ fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u
     let subtable_len_global_offset = contents.len();
     contents.push_u16(0); // length (backfilled later)
     contents.push_u16(0); // language (not used)
-    let seg_count = char_map.mappings.len() as u16 + 1; // Add one at the end for the last end code
+    let seg_count = glyph_map.len() as u16 + 1; // Add one at the end for the last end code
     let seg_count_log_2 = 15 - seg_count.leading_zeros();
     contents.push_u16(2 * seg_count); // segment count * 2
     contents.push_u16(2 << seg_count_log_2); // search range
@@ -79,7 +144,7 @@ fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u
     contents.push_u16(2 * seg_count - 2 << seg_count_log_2); // range shift
 
     // end code
-    for (i, _c) in char_map.mappings.iter().enumerate() {
+    for (i, _glyph_id) in glyph_map.iter().enumerate() {
         contents.push_u16(i as u16);
     }
     contents.push_u16(u16::MAX); // last end code
@@ -88,21 +153,20 @@ fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u
     contents.push_u16(0);
 
     // start code
-    for (i, _c) in char_map.mappings.iter().enumerate() {
+    for (i, _glyph_id) in glyph_map.iter().enumerate() {
         contents.push_u16(i as u16);
     }
     contents.push_u16(u16::MAX); // last start code
 
     // ID delta
-    for (i, &c) in char_map.mappings.iter().enumerate() {
-        let glyph_id = old_face.glyph_index(c).unwrap_or_default();
+    for (i, &glyph_id) in glyph_map.iter().enumerate() {
         let delta = glyph_id.0 as i16 - i as i16;
         contents.push_u16(delta as u16);
     }
     contents.push_u16(0); // last ID delta
 
     // ID range offset
-    for _ in char_map.mappings.iter() {
+    for _ in glyph_map {
         contents.push_u16(0);
     }
     contents.push_u16(0); // last ID range offset
@@ -118,8 +182,7 @@ fn write_cmap(contents: &mut Vec<u8>, char_map: &CharMap, old_face: &Face) -> (u
 
 fn write_glyf(
     contents: &mut Vec<u8>,
-    char_map: &CharMap,
-    face: &Face,
+    glyph_map: &[GlyphId],
     loca: LazyArray16<u32>,
     table_data: &[u8],
     new_loca: &mut [u32],
@@ -127,12 +190,7 @@ fn write_glyf(
     let glyf_offset = contents.len() as u32;
     let mut glyf_len = 0u32;
 
-    for &c in &char_map.mappings {
-        let glyph_id = if c == '\0' {
-            GlyphId(0)
-        } else {
-            face.glyph_index(c).unwrap_or_default()
-        };
+    for &glyph_id in glyph_map {
         let offset = loca.get(glyph_id.0).unwrap_or_default();
         let next_offset = loca.get(glyph_id.0 + 1).unwrap_or_default();
         let len = next_offset - offset;
