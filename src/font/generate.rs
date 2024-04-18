@@ -69,7 +69,10 @@ impl Font<'_> {
         // table directory
         contents.push_u32(0x00010000); // version
         contents.push_u16(tables.len() as u16); // num tables
-        contents.extend_from_slice(&[0; 6]); // search range, entry selector, range shift (ignored)
+        let (search_range, entry_selector, range_shift) = search_hints(tables.len() as u16);
+        contents.push_u16(16 * search_range); // search range
+        contents.push_u16(entry_selector); // entry selector
+        contents.push_u16(16 * range_shift); // range shift
         for &tag in tables.keys() {
             // table records
             contents.push_u32(tag.0); // tag
@@ -168,9 +171,10 @@ fn generate_cmap() -> Vec<u8> {
     contents.push_u16(24); // length
     contents.push_u16(0); // language (not used)
     contents.push_u16(2); // segment count * 2
-    contents.push_u16(2); // search range
-    contents.push_u16(0); // entry selector
-    contents.push_u16(0); // range shift
+    let (search_range, entry_selector, range_shift) = search_hints(1);
+    contents.push_u16(2 * search_range); // search range
+    contents.push_u16(entry_selector); // entry selector
+    contents.push_u16(2 * range_shift); // range shift
     contents.push_u16(u16::MAX); // end code
     contents.push_u16(0); // reserved padding
     contents.push_u16(0); // start code
@@ -269,6 +273,20 @@ fn generate_hhea(raw_face: &RawFace, num_glyphs: usize) -> Vec<u8> {
     contents[34..36].copy_from_slice(&(num_glyphs as u16).to_be_bytes());
 
     contents
+}
+
+fn search_hints(len: u16) -> (u16, u16, u16) {
+    let mut search_range = 1;
+    let mut entry_selector = 0;
+    let range_shift;
+
+    while search_range as u32 * 2 <= len as u32 {
+        search_range *= 2;
+        entry_selector += 1;
+    }
+    range_shift = len - search_range;
+
+    (search_range, entry_selector, range_shift)
 }
 
 fn pad_to_multiple_of(contents: &mut Vec<u8>, alignment: usize) {
