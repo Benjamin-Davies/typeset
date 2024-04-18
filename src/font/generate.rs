@@ -82,12 +82,20 @@ impl Font<'_> {
         }
 
         // tables
-        for (i, table) in tables.values().enumerate() {
+        for (i, (tag, mut table)) in tables.into_iter().enumerate() {
+            match table {
+                _ if tag == MAXP => {
+                    // num glyphs
+                    table[4..6].copy_from_slice(&(glyph_map.len() as u16).to_be_bytes());
+                }
+                _ => {}
+            }
+
             pad_to_multiple_of(&mut contents, 8);
 
             let offset = contents.len() as u32;
             let len = table.len() as u32;
-            contents.extend_from_slice(table);
+            contents.extend_from_slice(&table);
 
             // backfill the offset and length
             let table_record_offset = FIXED_HEADER_LEN + TABLE_RECORD_LEN * i;
