@@ -56,11 +56,13 @@ impl Font<'_> {
         let mut loca = Vec::new();
         tables.insert(GLYF, generate_glyf(self, &glyph_map, &mut loca));
         tables.insert(LOCA, generate_loca(&loca));
+        tables.insert(HEAD, generate_head(&raw_face));
         tables.insert(HMTX, generate_hmtx(&self.face, &glyph_map));
         tables.insert(HHEA, generate_hhea(&raw_face, glyph_map.len()));
+        tables.insert(MAXP, generate_maxp(&raw_face, glyph_map.len()));
 
         // Copy the rest of the required tables verbatim
-        for tag in [HEAD, MAXP, NAME, POST] {
+        for tag in [NAME, POST] {
             tables.insert(tag, raw_face.table(tag).unwrap_or_default().to_owned());
         }
 
@@ -69,7 +71,8 @@ impl Font<'_> {
         // table directory
         contents.push_u32(0x00010000); // version
         contents.push_u16(tables.len() as u16); // num tables
-        let (search_range, entry_selector, range_shift) = search_hints(tables.len() as u16);
+        let (search_range, entry_selector, range_shift) =
+            calculate_search_hints(tables.len() as u16);
         contents.push_u16(16 * search_range); // search range
         contents.push_u16(entry_selector); // entry selector
         contents.push_u16(16 * range_shift); // range shift
@@ -80,8 +83,10 @@ impl Font<'_> {
             contents.push_u32(0); // offset (backfilled later)
             contents.push_u32(0); // length (backfilled later)
         }
+        pad_to_multiple_of(&mut contents, 8);
 
         // tables
+        let mut table_offsets = BTreeMap::new();
         for (i, (tag, mut table)) in tables.into_iter().enumerate() {
             match table {
                 _ if tag == MAXP => {
@@ -91,19 +96,34 @@ impl Font<'_> {
                 _ => {}
             }
 
-            pad_to_multiple_of(&mut contents, 8);
-
+            pad_to_multiple_of(&mut table, 8);
             let offset = contents.len() as u32;
             let len = table.len() as u32;
             contents.extend_from_slice(&table);
 
-            // backfill the offset and length
+            let checksum = calculate_checksum(&table);
+
+            // backfill the checksum, offset and length
             let table_record_offset = FIXED_HEADER_LEN + TABLE_RECORD_LEN * i;
+            contents[table_record_offset + 4..table_record_offset + 8]
+                .copy_from_slice(&checksum.to_be_bytes());
             contents[table_record_offset + 8..table_record_offset + 12]
                 .copy_from_slice(&offset.to_be_bytes());
             contents[table_record_offset + 12..table_record_offset + 16]
                 .copy_from_slice(&len.to_be_bytes());
+
+            table_offsets.insert(tag, offset);
         }
+
+        // checksum adjustment
+        const TARGET_CHECKSUM: u32 = 0xB1B0AFBA;
+        let checksum = calculate_checksum(&contents);
+        let checksum_adjustment = TARGET_CHECKSUM.wrapping_sub(checksum);
+        let head_offset = table_offsets[&HEAD] as usize;
+        let head_table = &mut contents[head_offset..];
+        assert_eq!(&head_table[8..12], [0; 4]);
+        head_table[8..12].copy_from_slice(&checksum_adjustment.to_be_bytes());
+        assert_eq!(calculate_checksum(&contents), TARGET_CHECKSUM);
 
         contents
     }
@@ -179,7 +199,7 @@ fn generate_cmap() -> Vec<u8> {
     contents.push_u16(24); // length
     contents.push_u16(0); // language (not used)
     contents.push_u16(2); // segment count * 2
-    let (search_range, entry_selector, range_shift) = search_hints(1);
+    let (search_range, entry_selector, range_shift) = calculate_search_hints(1);
     contents.push_u16(2 * search_range); // search range
     contents.push_u16(entry_selector); // entry selector
     contents.push_u16(2 * range_shift); // range shift
@@ -274,6 +294,17 @@ fn generate_hmtx(face: &Face, glyph_map: &[GlyphId]) -> Vec<u8> {
     contents
 }
 
+fn generate_head(raw_face: &RawFace) -> Vec<u8> {
+    let mut contents = raw_face.table(HEAD).unwrap().to_owned();
+
+    // checksum adjustment
+    contents[8..12].copy_from_slice(&0u32.to_be_bytes());
+    // index to loca format
+    contents[50..52].copy_from_slice(&1u16.to_be_bytes());
+
+    contents
+}
+
 fn generate_hhea(raw_face: &RawFace, num_glyphs: usize) -> Vec<u8> {
     let mut contents = raw_face.table(HHEA).unwrap().to_owned();
 
@@ -283,7 +314,25 @@ fn generate_hhea(raw_face: &RawFace, num_glyphs: usize) -> Vec<u8> {
     contents
 }
 
-fn search_hints(len: u16) -> (u16, u16, u16) {
+fn generate_maxp(raw_face: &RawFace, num_glyphs: usize) -> Vec<u8> {
+    let mut contents = raw_face.table(MAXP).unwrap().to_owned();
+
+    // num glyphs
+    contents[4..6].copy_from_slice(&(num_glyphs as u16).to_be_bytes());
+
+    contents
+}
+
+fn calculate_checksum(data: &[u8]) -> u32 {
+    let mut sum: u32 = 0;
+    for chunk in data.chunks(4) {
+        let value = u32::from_be_bytes(chunk.try_into().unwrap());
+        sum = sum.wrapping_add(value);
+    }
+    sum
+}
+
+fn calculate_search_hints(len: u16) -> (u16, u16, u16) {
     let mut search_range = 1;
     let mut entry_selector = 0;
     let range_shift;
