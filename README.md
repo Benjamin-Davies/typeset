@@ -4,6 +4,8 @@ A small experiment in positioning text on a page. So far I've implemented line w
 
 Running `cargo test` downloads Noto Serif and generates some test PDFs in the `output` folder.
 
+I've written my own code for generating PDFs and subsetting the TrueType fonts, but have not had the chance to properly debug it on macOS. The subsetted font displays correctly in PDF.js (most browsers) and Gnome Evince, but not in macOS Preview. The last version that worked with Preview is in the [macos branch](https://github.com/Benjamin-Davies/typeset/tree/macos).
+
 ## TODO
 
 - [x] X-positions: Given a string of glyphs, I want to generate a list of X-positions for when the characters are printed in a line.
@@ -15,6 +17,6 @@ Running `cargo test` downloads Noto Serif and generates some test PDFs in the `o
 - [x] Page breaks: Given a document AST, when I render it and it needs more than one page it should break the content into pages.
 - [x] Write unit tests and refactor
 - [x] Unicode support
-- [ ] Only include the glyphs that are actually used in the PDF
+- [x] Only include the glyphs that are actually used in the PDF
 - [x] Formula parsing: Given a LaTeX fomula, I want to parse an AST.
 - [ ] Formula drawing: Given a LaTeX formula AST, I want to draw it as a block in combination with text blocks.
