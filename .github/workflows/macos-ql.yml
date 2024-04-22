@@ -1,0 +1,21 @@
+name: macOS QuickLook
+
+on: [push]
+
+jobs:
+  quicklook:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Create directory
+      run: mkdir -p output/thumbnails/ output/previews/
+    - name: Generate thumbnail
+      run: qlmanage -t -s 1000 -o output/thumbnails/ examples/*
+    - name: Generate previews
+      run: qlmanage -p -o output/previews/ examples/*
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        path: output/
