@@ -11,7 +11,7 @@ jobs:
       - name: Create directory
         run: mkdir -p output/
       - name: Generate thumbnail
-        run: qlmanage -t -s 1000 -o output/ examples/*
+        run: qlmanage -t -s 4000 -o output/ examples/*
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
