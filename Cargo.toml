@@ -14,4 +14,4 @@ ttf-parser = "0.20.0"
 ureq = "2.9.6"
 
 [dev-dependencies]
-ring = "0.17.12"
+ring = "0.17.13"
